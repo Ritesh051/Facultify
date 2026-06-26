@@ -2,7 +2,7 @@
 
 **Facultify** is a modern educational assessment platform that bridges the gap between teaching and evaluation. It gives educators tools to create, manage, and grade tests — and provides students a clean, distraction-free exam experience — all within a single multi-role web application.
 
-> **Current status**: The application is fully production-ready end-to-end. Real Supabase authentication, database, and Row Level Security are all wired up and working. All mock data has been removed from every page. To run against your own database, create a Supabase project, run `supabase/schema.sql`, and add the three env vars to `.env.local`. See [Supabase Setup](#supabase-setup).
+> **Current status**: The application is fully production-ready end-to-end. Real Supabase authentication, database, and Row Level Security are all wired up and working. Teacher and student invite emails are sent via Resend with branded HTML templates. All mock data has been removed from every page. To run against your own database, create a Supabase project, run `supabase/schema.sql`, add the Supabase env vars to `.env.local`, and add a `RESEND_API_KEY`. See [Supabase Setup](#supabase-setup) and [Environment Variables](#environment-variables).
 
 ---
 
@@ -61,6 +61,7 @@ The platform supports three question types (MCQ, True/False, Written), an AI-pow
 | Notifications | Sonner |
 | **Database** | **Supabase (PostgreSQL)** |
 | **Auth** | **Supabase Auth** |
+| **Email** | **Resend** (custom HTML invite emails) |
 | **Storage** | **Supabase Storage** (for logo uploads, future) |
 | **AI generation** | **Supabase Edge Functions** (calls OpenAI / Anthropic) |
 
@@ -109,9 +110,15 @@ Facultify/
 
 │   ├── use-countdown.ts          # Countdown timer logic
 │   └── use-toast.ts              # Toast notification hook
+├── app/
+│   └── api/
+│       ├── invite/route.ts       # POST — generates teacher magic link, sends Resend email
+│       └── invite-student/       # POST — generates student magic link, sends Resend email
+│           └── route.ts
 ├── lib/
 │   ├── types.ts                  # All TypeScript domain model definitions
 │   ├── database.types.ts         # TypeScript types matching Supabase DB rows
+│   ├── email.ts                  # Resend email helpers: sendTeacherInviteEmail, sendStudentInviteEmail
 │   ├── supabase/
 │   │   ├── client.ts             # Browser Supabase client (Client Components)
 │   │   ├── server.ts             # Server Supabase client (RSC / Route Handlers)
@@ -370,14 +377,16 @@ Supabase Auth handles all user accounts. Here is how each role gets created and 
 
 **Teacher:**
 1. Admin adds a teacher from `/admin/teachers` — a `teachers` row is inserted (no `user_id` yet).
-2. Teacher receives an invite email (via `supabase.auth.admin.inviteUserByEmail()` — requires wiring a Server Action using `lib/supabase/admin.ts`).
-3. Teacher clicks the link, hits `/auth/callback`. The callback finds no profile for the new user, checks the `teachers` table by email, creates a `profiles` row with `role: 'teacher'`, and links `teachers.user_id` to the auth user.
-4. Teacher is redirected to `/teacher`.
+2. The page calls `POST /api/invite`. The route uses the service-role admin client to call `supabase.auth.admin.generateLink({ type: 'invite', email })`, which returns a one-time magic link **without** sending Supabase's default plain-text email.
+3. The route then sends a branded HTML invite email via **Resend** (`lib/email.ts → sendTeacherInviteEmail`). The email includes the teacher's name, subject, institution name, and a "Access My Teacher Dashboard →" CTA button containing the magic link.
+4. Teacher clicks the button, hits `/auth/callback`. The callback finds no profile, checks the `teachers` table by email, creates a `profiles` row with `role: 'teacher'`, and links `teachers.user_id` to the auth user.
+5. Teacher is redirected to `/teacher`.
 
 **Student:**
 1. Teacher adds a student from `/teacher/students` — a `students` row is inserted.
-2. Same invite flow as teachers. The callback checks `students` by email, creates the profile with `role: 'student'`, and links `students.user_id`.
-3. Student is redirected to `/student`.
+2. The page calls `POST /api/invite-student`. Same magic-link flow as teachers, but the route sends a different email via `sendStudentInviteEmail`. The email is sent **from the teacher's name** and includes the teacher's name, batch, institution, and a "Set Up My Student Account →" CTA.
+3. Student clicks the button, hits `/auth/callback`. The callback checks `students` by email, creates the profile with `role: 'student'`, and links `students.user_id`.
+4. Student is redirected to `/student`.
 
 **Session lifecycle:**
 - Every dashboard layout calls `initSession()` on mount.
@@ -426,7 +435,17 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 ```
 
-**4. Start the app**
+**4. Add a Resend API key**
+
+Sign up at [resend.com](https://resend.com), create an API key, and add it to `.env.local`:
+
+```env
+RESEND_API_KEY=re_your_api_key_here
+```
+
+During local development, Resend's sandbox only delivers to your own verified email. For production, verify your sending domain and set `RESEND_FROM_EMAIL`.
+
+**5. Start the app**
 
 ```bash
 npm run dev
@@ -503,9 +522,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 
 # Server-side only — never expose to the browser
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+
+# Resend — for teacher and student invite emails
+RESEND_API_KEY=re_your_api_key_here
+# RESEND_FROM_EMAIL=Facultify <no-reply@yourdomain.com>  # optional, defaults to onboarding@resend.dev
 ```
 
-> **SUPABASE_SERVICE_ROLE_KEY** — This key bypasses all RLS policies. It is used by `lib/supabase/admin.ts` for privileged server-side operations (sending invite emails). Never import `admin.ts` from a Client Component or expose this key in any client-side bundle.
+> **SUPABASE_SERVICE_ROLE_KEY** — This key bypasses all RLS policies. It is used by `lib/supabase/admin.ts` for privileged server-side operations (generating invite magic links). Never import `admin.ts` from a Client Component or expose this key in any client-side bundle.
+
+> **RESEND_API_KEY** — Get this from [resend.com/api-keys](https://resend.com/api-keys). During development you can send to your own verified email using the `onboarding@resend.dev` sandbox sender. For production, verify your domain in Resend and set `RESEND_FROM_EMAIL` to your own address. Add this key to Vercel's Environment Variables (server-side only — do not prefix with `NEXT_PUBLIC_`).
 
 ---
 
@@ -541,7 +566,7 @@ Add the three Supabase env vars in your Vercel project settings (Settings → En
 - [x] **Mock data fully removed** — All 11 dashboard pages switched from `mock-service` to `supabase-service`; all hardcoded dummy IDs removed
 - [x] **RLS onboarding fix** — Bootstrap race condition solved; new institutions onboard correctly
 - [x] **TypeScript clean** — Zero `tsc --noEmit` errors across the entire codebase
-- [ ] **Teacher/Student invite emails** — Wire `inviteUserByEmail()` in a Server Action using `lib/supabase/admin.ts`
+- [x] **Teacher/Student invite emails** — Custom branded HTML emails via Resend; teacher email links to `/teacher` dashboard, student email references the teacher by name and links to `/student`
 - [ ] **Real AI Generation** — Write the `generate-test` Supabase Edge Function (calls OpenAI/Anthropic)
 - [ ] **Question Bank** — Reusable question library with tags and search
 - [ ] **Proctoring** — Webcam / tab-switch detection during exams

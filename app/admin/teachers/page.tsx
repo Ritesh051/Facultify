@@ -12,6 +12,8 @@ import {
   Search,
   ShieldCheck,
   ShieldOff,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,6 +141,8 @@ export default function TeachersPage() {
   const [deleteTarget, setDeleteTarget] = useState<Teacher | null>(null);
   const [form, setForm] = useState({ name: "", email: "", subject: "" });
   const [submitting, setSubmitting] = useState(false);
+  const [inviteLink, setInviteLink] = useState("");
+  const [copied, setCopied] = useState(false);
 
   // ── Load teachers on mount ────────────────────────────────────────────────
 
@@ -182,23 +186,33 @@ export default function TeachersPage() {
       });
 
       // Send the invite email via the server-side route (uses service role key)
+      const institutionName =
+        activeSession?.role === "admin" ? activeSession.user.name : "";
       const res = await fetch("/api/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email:         created.email,
-          name:          created.name,
+          email:           created.email,
+          name:            created.name,
+          subject:         created.subject,
           institutionId,
+          institutionName,
         }),
       });
-      if (!res.ok) {
-        const { error } = await res.json().catch(() => ({ error: "Unknown error" }));
-        toast.warning(`Teacher added but invite email failed: ${error}`);
+
+      setTeachers((prev) => [...prev, created]);
+
+      const data = await res.json().catch(() => ({}));
+      if (data.emailFailed) {
+        setInviteLink(data.magicLink ?? "");
+        toast.warning("Teacher added — email failed. Copy the invite link from the dialog.");
+        return; // keep dialog open to show the link
+      } else if (!res.ok) {
+        toast.warning("Teacher added but invite email could not be sent.");
       } else {
         toast.success(`Invite email sent to ${created.email}.`);
       }
 
-      setTeachers((prev) => [...prev, created]);
       setInviteOpen(false);
       setForm({ name: "", email: "", subject: "" });
     } catch {
@@ -420,7 +434,11 @@ export default function TeachersPage() {
         open={inviteOpen}
         onOpenChange={(open) => {
           setInviteOpen(open);
-          if (!open) setForm({ name: "", email: "", subject: "" });
+          if (!open) {
+            setForm({ name: "", email: "", subject: "" });
+            setInviteLink("");
+            setCopied(false);
+          }
         }}
       >
         <DialogContent className="sm:max-w-md">
@@ -431,59 +449,94 @@ export default function TeachersPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-1">
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-name">Full name</Label>
-              <Input
-                id="invite-name"
-                placeholder="Dr. Ananya Sharma"
-                value={form.name}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, name: e.target.value }))
-                }
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-email">Email address</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                placeholder="teacher@institution.edu"
-                value={form.email}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, email: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-subject">Subject</Label>
-              <Input
-                id="invite-subject"
-                placeholder="Mathematics"
-                value={form.subject}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, subject: e.target.value }))
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !submitting) handleInvite();
-                }}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setInviteOpen(false)}
-              disabled={submitting}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleInvite} disabled={submitting}>
-              {submitting ? "Sending…" : "Send invite"}
-            </Button>
-          </DialogFooter>
+          {inviteLink ? (
+            <>
+              <div className="space-y-3 py-1">
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                  Email delivery failed (Resend domain not verified). Share this one-time link with the teacher directly — it expires after first use.
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={inviteLink}
+                    className="text-xs font-mono"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="flex-shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(inviteLink);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                    title="Copy link"
+                  >
+                    {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => setInviteOpen(false)}>Done</Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <div className="space-y-4 py-1">
+                <div className="space-y-1.5">
+                  <Label htmlFor="invite-name">Full name</Label>
+                  <Input
+                    id="invite-name"
+                    placeholder="Dr. Ananya Sharma"
+                    value={form.name}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, name: e.target.value }))
+                    }
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="invite-email">Email address</Label>
+                  <Input
+                    id="invite-email"
+                    type="email"
+                    placeholder="teacher@institution.edu"
+                    value={form.email}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, email: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="invite-subject">Subject</Label>
+                  <Input
+                    id="invite-subject"
+                    placeholder="Mathematics"
+                    value={form.subject}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, subject: e.target.value }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !submitting) handleInvite();
+                    }}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setInviteOpen(false)}
+                  disabled={submitting}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handleInvite} disabled={submitting}>
+                  {submitting ? "Sending…" : "Send invite"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendTeacherInviteEmail } from "@/lib/email";
+import { sendStudentInviteEmail } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
-  const { email, name, subject, institutionId, institutionName } = body ?? {};
+  const { email, studentName, teacherName, batchName, institutionName } = body ?? {};
 
-  if (!email || !name || !institutionId) {
+  if (!email || !studentName || !teacherName) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
-  // Verify the caller is an authenticated admin for this institution
+  // Verify the caller is an authenticated teacher
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,15 +36,11 @@ export async function POST(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, institution_id")
+    .select("role")
     .eq("id", user.id)
     .single();
 
-  if (
-    !profile ||
-    (profile as { role: string; institution_id: string }).role !== "admin" ||
-    (profile as { role: string; institution_id: string }).institution_id !== institutionId
-  ) {
+  if (!profile || (profile as { role: string }).role !== "teacher") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -56,7 +52,7 @@ export async function POST(request: NextRequest) {
     type: "invite",
     email,
     options: {
-      data: { full_name: name, role: "teacher" },
+      data: { full_name: studentName, role: "student" },
       redirectTo: `${origin}/auth/callback`,
     },
   });
@@ -77,13 +73,14 @@ export async function POST(request: NextRequest) {
   } else {
     magicLink = `${origin}/auth/login`;
   }
-  const dashboardUrl = `${origin}/teacher`;
+  const dashboardUrl = `${origin}/student`;
 
   // Send a rich custom email via Resend
-  const { error: emailError } = await sendTeacherInviteEmail({
+  const { error: emailError } = await sendStudentInviteEmail({
     to: email,
-    teacherName: name,
-    subject: subject ?? "your subject",
+    studentName,
+    teacherName,
+    batchName: batchName ?? "your batch",
     institutionName: institutionName ?? "your institution",
     dashboardUrl,
     magicLink,

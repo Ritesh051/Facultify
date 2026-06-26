@@ -1,11 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-// Untyped service-role client — same pattern as supabase-service.ts.
-// Used here because the invited user has no profile yet, so RLS blocks
-// the anon client for teachers/students lookups.
 function createAdminDb() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,14 +11,9 @@ function createAdminDb() {
   );
 }
 
-export async function GET(request: NextRequest) {
-  const url  = new URL(request.url);
-  const code = url.searchParams.get("code");
-
-  if (!code) {
-    return NextResponse.redirect(new URL("/auth/login?error=no_code", request.url));
-  }
-
+// Called by /auth/confirm after the browser client processes a hash-based
+// (implicit flow) magic link. The session is already in cookies at this point.
+export async function POST() {
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,18 +30,13 @@ export async function GET(request: NextRequest) {
     }
   );
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
-  if (error) {
-    return NextResponse.redirect(new URL("/auth/login?error=exchange_failed", request.url));
-  }
-
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.redirect(new URL("/auth/login", request.url));
+    return NextResponse.json({ error: "Not authenticated" });
   }
 
-  // Check for unlinked invite rows FIRST — before the existing-profile check.
-  // This handles the case where the invited user already has a Supabase account
+  // Check unlinked invite rows FIRST — same priority logic as /auth/callback/route.ts.
+  // Handles the case where the invited user already has a Supabase account
   // (e.g. signed up as admin) but was also invited as a teacher or student.
   const adminDb = createAdminDb();
 
@@ -67,7 +54,7 @@ export async function GET(request: NextRequest) {
     if (!teacher.user_id) {
       await adminDb.from("teachers").update({ user_id: user.id }).eq("id", teacher.id);
     }
-    return NextResponse.redirect(new URL("/teacher", request.url));
+    return NextResponse.json({ destination: "/teacher" });
   }
 
   const { data: student } = await adminDb
@@ -84,7 +71,7 @@ export async function GET(request: NextRequest) {
     if (!student.user_id) {
       await adminDb.from("students").update({ user_id: user.id }).eq("id", student.id);
     }
-    return NextResponse.redirect(new URL("/student", request.url));
+    return NextResponse.json({ destination: "/student" });
   }
 
   // No unlinked invite row → existing profile → send to their dashboard
@@ -96,9 +83,8 @@ export async function GET(request: NextRequest) {
 
   if (profile) {
     const routes: Record<string, string> = { admin: "/admin", teacher: "/teacher", student: "/student" };
-    return NextResponse.redirect(new URL(routes[profile.role] ?? "/", request.url));
+    return NextResponse.json({ destination: routes[profile.role] ?? "/" });
   }
 
-  // Brand-new admin with no institution yet → onboarding wizard
-  return NextResponse.redirect(new URL("/onboard", request.url));
+  return NextResponse.json({ destination: "/onboard" });
 }

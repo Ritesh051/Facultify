@@ -35,42 +35,21 @@ const createClient = () =>
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-import { cn } from "@/lib/utils";
+import { cn, timeAgo } from "@/lib/utils";
 import type { AdminAnalytics } from "@/lib/types";
 
-// ─── Static mock data ─────────────────────────────────────────────────────────
+// ─── Activity feed types ──────────────────────────────────────────────────────
 
-const ACTIVITY = [
-  {
-    text: "Dr. Ananya Sharma created test 'Quadratic Equations'",
-    time: "2 hours ago",
-    type: "test",
-  },
-  {
-    text: "New student Arjun Patel enrolled in Class 11-A",
-    time: "5 hours ago",
-    type: "student",
-  },
-  {
-    text: "Prof. Rahul Verma published Physics Mid Term",
-    time: "1 day ago",
-    type: "test",
-  },
-  {
-    text: "Invoice #INV-003 generated for July 2024",
-    time: "2 days ago",
-    type: "billing",
-  },
-  {
-    text: "Subscription renewed — Growth Plan active",
-    time: "3 days ago",
-    type: "billing",
-  },
-] as const;
+interface ActivityItem {
+  text: string;
+  time: string;
+  type: "test" | "student" | "teacher" | "billing";
+}
 
 const ACTIVITY_DOT_COLOR: Record<string, string> = {
-  test: "bg-blue-500",
+  test:    "bg-blue-500",
   student: "bg-green-500",
+  teacher: "bg-violet-500",
   billing: "bg-orange-500",
 };
 
@@ -146,6 +125,7 @@ export default function AdminDashboard() {
   const { activeSession } = useAppStore();
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
   const [chartData, setChartData] = useState<ChartEntry[]>([]);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const institutionId = activeSession?.role === "admin" ? activeSession.user.id : "";
@@ -160,6 +140,7 @@ export default function AdminDashboard() {
 
     Promise.all([
       getAdminAnalytics(institutionId),
+      // Chart data
       supabase
         .from("tests")
         .select("title, avg_score, created_at")
@@ -167,7 +148,35 @@ export default function AdminDashboard() {
         .neq("status", "draft")
         .order("created_at", { ascending: false })
         .limit(5),
-    ]).then(([a, { data: tests }]) => {
+      // Activity: recent tests
+      supabase
+        .from("tests")
+        .select("title, created_at, status, teachers(name)")
+        .eq("institution_id", institutionId)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      // Activity: recent students
+      supabase
+        .from("students")
+        .select("name, enrolled_at, batches(name)")
+        .eq("institution_id", institutionId)
+        .order("enrolled_at", { ascending: false })
+        .limit(5),
+      // Activity: recent teachers
+      supabase
+        .from("teachers")
+        .select("name, joined_at")
+        .eq("institution_id", institutionId)
+        .order("joined_at", { ascending: false })
+        .limit(5),
+      // Activity: recent invoices
+      supabase
+        .from("invoices")
+        .select("id, issued_at, amount")
+        .eq("institution_id", institutionId)
+        .order("issued_at", { ascending: false })
+        .limit(3),
+    ]).then(([a, { data: tests }, { data: recentTests }, { data: recentStudents }, { data: recentTeachers }, { data: recentInvoices }]) => {
       if (cancelled) return;
       setAnalytics(a);
       setChartData(
@@ -177,6 +186,36 @@ export default function AdminDashboard() {
           date:      new Date(t.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
         }))
       );
+
+      // Build activity feed from real data
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const items: { text: string; type: ActivityItem["type"]; ts: number }[] = [];
+
+      for (const t of recentTests ?? []) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const teacherName = (t as any).teachers?.name ?? "A teacher";
+        const action = t.status === "draft" ? "created" : "published";
+        items.push({ text: `${teacherName} ${action} test "${t.title}"`, type: "test", ts: new Date(t.created_at).getTime() });
+      }
+      for (const s of recentStudents ?? []) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const batchName = (s as any).batches?.name ?? "a batch";
+        items.push({ text: `${s.name} enrolled in ${batchName}`, type: "student", ts: new Date(s.enrolled_at).getTime() });
+      }
+      for (const t of recentTeachers ?? []) {
+        items.push({ text: `${t.name} joined as teacher`, type: "teacher", ts: new Date(t.joined_at).getTime() });
+      }
+      for (const inv of recentInvoices ?? []) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const amt = (inv as any).amount ? `$${Number((inv as any).amount).toFixed(0)}` : "";
+        items.push({ text: `Invoice${amt ? ` of ${amt}` : ""} generated`, type: "billing", ts: new Date(inv.issued_at).getTime() });
+      }
+
+      items.sort((a, b) => b.ts - a.ts);
+      setActivity(
+        items.slice(0, 5).map((i) => ({ text: i.text, type: i.type, time: timeAgo(new Date(i.ts).toISOString()) }))
+      );
+
       setLoading(false);
     });
 
@@ -313,30 +352,51 @@ export default function AdminDashboard() {
             <p className="text-xs text-muted-foreground">Last 5 events</p>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-4">
-              {ACTIVITY.map((item, i) => (
-                <li key={i} className="flex gap-3 text-sm">
-                  <div className="flex flex-col items-center gap-1 flex-shrink-0 pt-1">
-                    <span
-                      className={cn(
-                        "h-2 w-2 rounded-full flex-shrink-0",
-                        ACTIVITY_DOT_COLOR[item.type] ?? "bg-slate-400"
+            {loading ? (
+              <div className="space-y-4">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="flex gap-3">
+                    <div className="flex flex-col items-center gap-1 pt-1 flex-shrink-0">
+                      <div className="h-2 w-2 rounded-full bg-slate-200 animate-pulse" />
+                      {i < 5 && <div className="w-px flex-1 bg-slate-100 min-h-[12px]" />}
+                    </div>
+                    <div className="pb-2 space-y-1.5 flex-1">
+                      <div className="h-3 bg-slate-200 rounded animate-pulse w-4/5" />
+                      <div className="h-3 bg-slate-100 rounded animate-pulse w-1/3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : activity.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                No activity yet. Actions like adding teachers, enrolling students, and creating tests will appear here.
+              </p>
+            ) : (
+              <ul className="space-y-4">
+                {activity.map((item, i) => (
+                  <li key={i} className="flex gap-3 text-sm">
+                    <div className="flex flex-col items-center gap-1 flex-shrink-0 pt-1">
+                      <span
+                        className={cn(
+                          "h-2 w-2 rounded-full flex-shrink-0",
+                          ACTIVITY_DOT_COLOR[item.type] ?? "bg-slate-400"
+                        )}
+                      />
+                      {i < activity.length - 1 && (
+                        <span className="w-px flex-1 bg-slate-100 min-h-[12px]" />
                       )}
-                    />
-                    {i < ACTIVITY.length - 1 && (
-                      <span className="w-px flex-1 bg-slate-100 min-h-[12px]" />
-                    )}
-                  </div>
-                  <div className="pb-2">
-                    <p className="text-slate-700 leading-snug">{item.text}</p>
-                    <p className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                      <Clock className="h-3 w-3" />
-                      {item.time}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                    </div>
+                    <div className="pb-2">
+                      <p className="text-slate-700 leading-snug">{item.text}</p>
+                      <p className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                        <Clock className="h-3 w-3" />
+                        {item.time}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
       </div>

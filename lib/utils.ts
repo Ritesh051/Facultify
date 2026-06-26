@@ -52,3 +52,15 @@ export function scoreBadgeVariant(pct: number): "default" | "secondary" | "destr
   if (pct >= 40) return "secondary";
   return "destructive";
 }
+
+export function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins  = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days  = Math.floor(diff / 86_400_000);
+  if (mins  <  1) return "just now";
+  if (mins  < 60) return `${mins} min ago`;
+  if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+  if (days  <  7) return `${days} day${days > 1 ? "s" : ""} ago`;
+  return formatDate(iso);
+}

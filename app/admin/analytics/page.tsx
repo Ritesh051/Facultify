@@ -27,23 +27,40 @@ import { Users, GraduationCap, FileText, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AdminAnalytics, Teacher } from "@/lib/types";
 
-const MONTHLY_DATA = [
-  { month: "Jan", tests: 12, submissions: 180 },
-  { month: "Feb", tests: 18, submissions: 240 },
-  { month: "Mar", tests: 15, submissions: 210 },
-  { month: "Apr", tests: 22, submissions: 290 },
-  { month: "May", tests: 27, submissions: 380 },
-  { month: "Jun", tests: 19, submissions: 260 },
-];
+const PIE_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#f97316"];
 
-const SUBJECT_PIE = [
-  { name: "Mathematics", value: 35, color: "#3b82f6" },
-  { name: "Physics",     value: 22, color: "#8b5cf6" },
-  { name: "Chemistry",   value: 18, color: "#10b981" },
-  { name: "English",     value: 25, color: "#f59e0b" },
-];
+interface SubjectSlice { name: string; value: number; count: number; color: string }
+interface MonthlyEntry { month: string; tests: number; submissions: number }
+interface TopStudent { id: string; name: string; email: string; roll_number: string; overall_score: number }
 
-interface TopStudent { id: string; name: string; email: string; roll_number: string }
+function buildMonthlyData(
+  rawTests: { created_at: string }[],
+  rawSubs: { submitted_at: string | null }[]
+): MonthlyEntry[] {
+  const buckets: { label: string; year: number; month: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    buckets.push({ label: d.toLocaleDateString("en-IN", { month: "short" }), year: d.getFullYear(), month: d.getMonth() });
+  }
+  return buckets.map(({ label, year, month }) => ({
+    month: label,
+    tests: rawTests.filter(t => { const d = new Date(t.created_at); return d.getFullYear() === year && d.getMonth() === month; }).length,
+    submissions: rawSubs.filter(s => { if (!s.submitted_at) return false; const d = new Date(s.submitted_at); return d.getFullYear() === year && d.getMonth() === month; }).length,
+  }));
+}
+
+function buildSubjectPie(rawTests: { subject: string }[]): SubjectSlice[] {
+  const counts: Record<string, number> = {};
+  for (const t of rawTests) counts[t.subject] = (counts[t.subject] ?? 0) + 1;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  if (total === 0) return [];
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 7)
+    .map(([name, count], i) => ({ name, count, value: Math.round((count / total) * 100), color: PIE_COLORS[i % PIE_COLORS.length] }));
+}
 
 // ─── Skeleton helpers ─────────────────────────────────────────────────────────
 
@@ -207,6 +224,8 @@ export default function AdminAnalyticsPage() {
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [topStudents, setTopStudents] = useState<TopStudent[]>([]);
+  const [monthlyData, setMonthlyData] = useState<MonthlyEntry[]>([]);
+  const [subjectPie, setSubjectPie] = useState<SubjectSlice[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -219,22 +238,49 @@ export default function AdminAnalyticsPage() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
 
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    sixMonthsAgo.setDate(1);
+    const since = sixMonthsAgo.toISOString();
+
     Promise.all([
       getAdminAnalytics(institutionId),
       getTeachers(institutionId),
+      // Top students by overall score
       supabase
         .from("students")
-        .select("id, name, email, roll_number")
+        .select("id, name, email, roll_number, overall_score")
         .eq("institution_id", institutionId)
         .eq("is_active", true)
+        .order("overall_score", { ascending: false })
         .limit(5),
-    ]).then(([adminData, teacherData, { data: studentsData }]) => {
-      if (!cancelled) {
-        setAnalytics(adminData);
-        setTeachers(teacherData);
-        setTopStudents((studentsData ?? []) as TopStudent[]);
-        setLoading(false);
-      }
+      // Tests in last 6 months (for monthly line chart + subject pie)
+      supabase
+        .from("tests")
+        .select("created_at, subject")
+        .eq("institution_id", institutionId)
+        .gte("created_at", since),
+      // Submissions in last 6 months (joined through tests for institution filter)
+      supabase
+        .from("submissions")
+        .select("submitted_at, tests!inner(institution_id)")
+        .eq("tests.institution_id", institutionId)
+        .gte("submitted_at", since)
+        .not("submitted_at", "is", null)
+        .in("status", ["submitted", "graded"]),
+      // All tests (for subject pie — not limited to 6 months)
+      supabase
+        .from("tests")
+        .select("subject")
+        .eq("institution_id", institutionId),
+    ]).then(([adminData, teacherData, { data: studentsData }, { data: recentTests }, { data: recentSubs }, { data: allTests }]) => {
+      if (cancelled) return;
+      setAnalytics(adminData);
+      setTeachers(teacherData);
+      setTopStudents((studentsData ?? []) as TopStudent[]);
+      setMonthlyData(buildMonthlyData(recentTests ?? [], recentSubs ?? []));
+      setSubjectPie(buildSubjectPie(allTests ?? []));
+      setLoading(false);
     });
     return () => { cancelled = true; };
   }, [institutionId]);
@@ -269,7 +315,6 @@ export default function AdminAnalyticsPage() {
             subtitle={`${analytics?.activeStudents ?? "—"} active`}
             icon={GraduationCap}
             color="green"
-            trend={{ value: 8, label: "vs last month" }}
           />
           <StatsCard
             title="Active Teachers"
@@ -277,7 +322,6 @@ export default function AdminAnalyticsPage() {
             subtitle={`of ${analytics?.totalTeachers ?? "—"} total`}
             icon={Users}
             color="blue"
-            trend={{ value: 12, label: "vs last month" }}
           />
           <StatsCard
             title="Tests This Month"
@@ -285,7 +329,6 @@ export default function AdminAnalyticsPage() {
             subtitle={`${analytics?.totalTestsCreated ?? "—"} all time`}
             icon={FileText}
             color="purple"
-            trend={{ value: 3, label: "vs last month" }}
           />
           <StatsCard
             title="Avg Score"
@@ -293,7 +336,6 @@ export default function AdminAnalyticsPage() {
             subtitle="institution-wide"
             icon={TrendingUp}
             color="orange"
-            trend={{ value: 5, label: "vs last month" }}
           />
         </div>
       )}
@@ -311,10 +353,12 @@ export default function AdminAnalyticsPage() {
           <CardContent>
             {loading ? (
               <ChartSkeleton height={220} />
+            ) : monthlyData.every(m => m.tests === 0 && m.submissions === 0) ? (
+              <p className="text-sm text-muted-foreground text-center py-16">No test activity in the last 6 months.</p>
             ) : (
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart
-                  data={MONTHLY_DATA}
+                  data={monthlyData}
                   margin={{ top: 8, right: 8, left: -20, bottom: 0 }}
                 >
                   <CartesianGrid
@@ -423,12 +467,14 @@ export default function AdminAnalyticsPage() {
           <CardContent>
             {loading ? (
               <ChartSkeleton height={200} />
+            ) : subjectPie.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-16">No tests created yet.</p>
             ) : (
               <>
                 <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
                     <Pie
-                      data={SUBJECT_PIE}
+                      data={subjectPie}
                       cx="50%"
                       cy="50%"
                       innerRadius={52}
@@ -436,7 +482,7 @@ export default function AdminAnalyticsPage() {
                       paddingAngle={3}
                       dataKey="value"
                     >
-                      {SUBJECT_PIE.map((entry, i) => (
+                      {subjectPie.map((entry, i) => (
                         <Cell key={i} fill={entry.color} stroke="none" />
                       ))}
                     </Pie>
@@ -444,7 +490,7 @@ export default function AdminAnalyticsPage() {
                   </PieChart>
                 </ResponsiveContainer>
                 <ul className="mt-2 space-y-1.5">
-                  {SUBJECT_PIE.map((s) => (
+                  {subjectPie.map((s) => (
                     <li key={s.name} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
                         <span
@@ -453,7 +499,7 @@ export default function AdminAnalyticsPage() {
                         />
                         <span className="text-slate-600">{s.name}</span>
                       </div>
-                      <span className="font-semibold text-slate-700">{s.value}%</span>
+                      <span className="font-semibold text-slate-700">{s.count} test{s.count !== 1 ? "s" : ""}</span>
                     </li>
                   ))}
                 </ul>
@@ -488,12 +534,13 @@ export default function AdminAnalyticsPage() {
                     <TableHead className="w-10">#</TableHead>
                     <TableHead>Student</TableHead>
                     <TableHead className="hidden sm:table-cell">Roll No.</TableHead>
+                    <TableHead className="min-w-[140px]">Overall Score</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {topStudents.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
+                      <TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">
                         No students enrolled yet.
                       </TableCell>
                     </TableRow>
@@ -514,6 +561,11 @@ export default function AdminAnalyticsPage() {
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-sm text-slate-500 py-3">
                         {s.roll_number}
+                      </TableCell>
+                      <TableCell className="py-3">
+                        {s.overall_score > 0
+                          ? <ScoreBar score={s.overall_score} />
+                          : <span className="text-xs text-muted-foreground">No tests yet</span>}
                       </TableCell>
                     </TableRow>
                   ))}

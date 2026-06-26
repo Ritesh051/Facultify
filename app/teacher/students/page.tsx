@@ -307,7 +307,31 @@ export default function TeacherStudentsPage() {
         isActive: true,
       });
       setStudents((prev) => [...prev, s]);
-      toast.success(`${s.name} added to your class.`);
+
+      // Send invite email to the student
+      const batchName = batches.find((b) => b.id === s.batchId)?.name ?? "";
+      const institutionName =
+        activeSession?.role === "teacher" ? activeSession.institution.name : "";
+      const teacherDisplayName =
+        activeSession?.role === "teacher" ? activeSession.user.name : "";
+      const res = await fetch("/api/invite-student", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email:           s.email,
+          studentName:     s.name,
+          teacherName:     teacherDisplayName,
+          batchName,
+          institutionName,
+        }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: "Unknown error" }));
+        toast.warning(`${s.name} added, but invite email failed: ${error}`);
+      } else {
+        toast.success(`${s.name} added and invite sent to ${s.email}.`);
+      }
+
       setStudentOpen(false);
       setStudentForm({ name: "", email: "", rollNumber: "", batchId: "" });
     } finally {

@@ -12,6 +12,7 @@ import {
   ClipboardList,
   CheckCircle2,
   Loader2,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,6 +87,17 @@ export default function OnboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-slate-50 flex flex-col items-center justify-center p-4">
+      {/* Back to Home */}
+      <div className="w-full max-w-2xl mb-4">
+        <button
+          onClick={() => router.push("/")}
+          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Home
+        </button>
+      </div>
+
       {/* Logo */}
       <div className="flex items-center gap-2.5 mb-10">
         <div className="h-9 w-9 rounded-lg bg-blue-600 flex items-center justify-center shadow-md">
@@ -366,6 +378,7 @@ export default function OnboardPage() {
             onClick={goBack}
             disabled={step === 1 || loading}
           >
+            
             Back
           </Button>
 
