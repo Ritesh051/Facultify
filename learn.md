@@ -18,7 +18,8 @@ A plain-language walkthrough of how this project is built, what every technology
 10. [The Service Layer](#10-the-service-layer)
 11. [Email Invites — Resend](#11-email-invites--resend)
 12. [Key Engineering Decisions](#12-key-engineering-decisions)
-13. [Glossary](#13-glossary)
+13. [Dashboards — What's Built](#13-dashboards--whats-built)
+14. [Glossary](#14-glossary)
 
 ---
 
@@ -112,38 +113,47 @@ Facultify/
 │
 ├── app/                         ← Everything Next.js serves as pages or API
 │   ├── page.tsx                 ← Landing page (public, no login needed)
+│   ├── dashboard/
+│   │   └── page.tsx             ← Universal router: reads role → redirects to right dashboard
 │   ├── onboard/
 │   │   └── page.tsx             ← 4-step institution setup wizard
 │   ├── auth/
 │   │   ├── login/page.tsx       ← Email + password login
 │   │   ├── signup/page.tsx      ← New admin account creation
-│   │   └── callback/route.ts    ← Magic link handler (post-login routing)
+│   │   ├── callback/route.ts    ← PKCE code → session exchange + profile creation
+│   │   └── confirm/page.tsx     ← Hash-based (#access_token) token handler
+│   ├── invite/
+│   │   └── teacher/[teacherId]/
+│   │       └── page.tsx         ← Invite link landing: handles both PKCE and hash flows
 │   ├── admin/
 │   │   ├── layout.tsx           ← Auth guard: must be logged in as admin
 │   │   ├── page.tsx             ← Admin dashboard
 │   │   ├── teachers/page.tsx    ← Manage and invite teachers
-│   │   ├── analytics/page.tsx   ← Institution-wide charts
+│   │   ├── analytics/page.tsx   ← Institution-wide charts (live data)
 │   │   ├── billing/page.tsx     ← Subscription and invoices
 │   │   └── settings/page.tsx    ← Institution settings
 │   ├── teacher/
-│   │   ├── layout.tsx           ← Auth guard: must be logged in as teacher
+│   │   ├── layout.tsx           ← Auth guard + nav/sidebar for teacher
 │   │   ├── page.tsx             ← Teacher dashboard
+│   │   ├── [id]/page.tsx        ← Invite landing redirect → /teacher
 │   │   ├── create-test/         ← 3-step test builder
 │   │   ├── tests/               ← View and manage tests
 │   │   ├── ai-generator/        ← AI-powered test creation
 │   │   ├── checking/            ← Grade submissions
-│   │   └── students/            ← Manage batches and students
+│   │   └── students/page.tsx    ← Full student & batch management (live data)
 │   ├── student/
-│   │   ├── layout.tsx           ← Auth guard: must be logged in as student
+│   │   ├── layout.tsx           ← Auth guard + nav/sidebar for student
 │   │   ├── page.tsx             ← Student dashboard
 │   │   ├── tests/               ← Upcoming and past tests
 │   │   ├── test/[id]/           ← Live exam interface
 │   │   ├── analytics/           ← Personal performance
 │   │   └── profile/             ← Student profile
 │   └── api/
-│       ├── invite/route.ts      ← POST: send teacher invite email
-│       └── invite-student/      ← POST: send student invite email
-│           └── route.ts
+│       ├── auth/
+│       │   └── finalize/route.ts ← POST: server-side profile creation + role routing
+│       ├── invite/route.ts       ← POST: send teacher invite email
+│       └── invite-student/
+│           └── route.ts          ← POST: send student invite email
 │
 ├── components/
 │   ├── ui/                      ← 28 shadcn/ui base components
@@ -227,8 +237,9 @@ Middleware runs **before any request reaches a page**. It runs at the "edge" (be
 
 What it does:
 1. Checks if you have a valid Supabase session cookie.
-2. If you try to visit `/admin`, `/teacher`, `/student`, or `/onboard` without a session → redirect to `/auth/login`.
+2. If you try to visit `/admin`, `/teacher`, `/student`, `/dashboard`, or `/onboard` without a session → redirect to `/auth/login` (preserving the intended destination via `?next=`).
 3. If you have a session → let the request through.
+4. `/invite/*` is **intentionally public** — unauthenticated teachers and students land there to accept their invite and set up their account.
 
 This is a fast first check. It doesn't check your *role* — just whether you're logged in at all.
 
@@ -236,10 +247,20 @@ This is a fast first check. It doesn't check your *role* — just whether you're
 
 Every protected section has a `layout.tsx` file. This layout:
 1. Calls `initSession()` from the Zustand store (loads your user data from Supabase).
-2. Checks your role. A teacher trying to visit `/admin` gets redirected to `/teacher`.
-3. While loading, shows a spinner.
+2. Checks your role. If the role doesn't match the section (e.g. a teacher visiting `/admin`), redirects to `/dashboard`, which then re-routes them to the right place.
+3. While loading, shows a role-coloured spinner (blue for admin/teacher, orange for student).
 
 **Why two layers?** Middleware is very fast but only checks the cookie, not the role. The layout does the deeper role check with actual DB data.
+
+### The `/dashboard` Page — Universal Router
+
+`app/dashboard/page.tsx` is a thin client page that:
+1. Calls `initSession()` to load the user's session.
+2. Reads `activeSession.role`.
+3. Immediately redirects: `admin → /admin`, `teacher → /teacher`, `student → /student`.
+4. Shows a spinner with the Facultify logo while deciding.
+
+This is the safe landing zone. Layouts redirect role-mismatched users here instead of hardcoding `/auth/login`, so a teacher accidentally visiting `/admin` ends up at their own dashboard rather than being logged out.
 
 ---
 
@@ -341,36 +362,68 @@ If a student tries to fetch tests from another batch or another school, the data
 3. The route uses the **service-role client** (see below) to call `supabase.auth.admin.generateLink({ type: 'invite', email })`.
 4. Supabase creates a one-time magic link and returns it — **without** sending any email.
 5. The route passes that magic link to `sendTeacherInviteEmail()` in `lib/email.ts`.
-6. Resend sends a branded HTML email to the teacher with a "Access My Teacher Dashboard" button.
-7. Teacher clicks the button → browser goes to `/auth/callback?code=XXX`.
-8. Callback finds no `profiles` row, but finds a `teachers` row matching the email.
-9. Callback creates the `profiles` row and links `teachers.user_id` to the auth account.
+6. Resend sends a branded HTML email to the teacher with a "Access My Teacher Dashboard" button. The link points to `/invite/teacher/[teacherId]`.
+7. Teacher clicks the button → browser lands on `/invite/teacher/[teacherId]`.
+8. That page detects whether the URL has `?code=` (PKCE flow) or `#access_token=` (implicit/hash flow) and handles both:
+   - **PKCE (`?code=`)**: navigates to `/auth/callback?code=XXX` so the server can exchange it.
+   - **Hash (`#access_token=`)**: calls `supabase.auth.setSession()` in the browser, then POSTs to `/api/auth/finalize`.
+9. `/api/auth/finalize` (server-side) finds the `teachers` row by email, creates the `profiles` row, links `teachers.user_id`, and returns `{ destination: "/teacher" }`.
 10. Teacher is redirected to `/teacher` dashboard.
 
 ### How a Student is Invited
 
 Same flow as a teacher, but:
-- Triggered from the teacher's Students page
+- Triggered from the teacher's Students page (`/teacher/students`)
 - Uses `POST /api/invite-student`
 - Email says "Your teacher [Teacher Name] has added you..." and shows the batch name
-- Callback links to the `students` table instead
+- `/api/auth/finalize` links to the `students` table instead and returns `{ destination: "/student" }`
 
-### The `/auth/callback` Route
+### The `/auth/callback` Route (PKCE flow)
 
-This single route handles *all* magic link flows. Its logic:
+Handles the server-side PKCE code exchange:
 
 ```
 User arrives at /auth/callback?code=XXX
-  → Exchange code for session
+  → exchangeCodeForSession(code) — sets session cookie
   → Get user from Supabase
-  → Does profiles row exist for this user?
-      YES → Route to their dashboard (/admin, /teacher, or /student)
-      NO  → Does teachers table have a row with this email?
-                YES → Create profile + link teacher row → /teacher
-                NO  → Does students table have a row with this email?
-                          YES → Create profile + link student row → /student
-                          NO  → New admin with no institution → /onboard
+  → Does teachers table have a row with this email?
+        YES → upsert profiles + link teacher row → redirect /teacher
+        NO  → Does students table have a row with this email?
+                  YES → upsert profiles + link student row → redirect /student
+                  NO  → Does profiles row exist?
+                            YES → redirect to their role's dashboard
+                            NO  → New admin with no institution → redirect /onboard
 ```
+
+Uses the **service-role client** for the teacher/student lookup so that newly invited users (who have no `profiles` row yet) can be found.
+
+### The `/auth/confirm` Page (Hash/Implicit flow)
+
+Some email clients (or Supabase configurations) send `#access_token=` in the URL fragment instead of `?code=`. The fragment never reaches the server, so a client-side page (`app/auth/confirm/page.tsx`) handles it:
+
+1. Reads `window.location.hash` and extracts `access_token` + `refresh_token`.
+2. Calls `supabase.auth.setSession()` to store the tokens in cookies.
+3. POSTs to `/api/auth/finalize` which does the same profile-creation logic as the PKCE callback.
+4. Redirects to the returned destination.
+
+### The `/api/auth/finalize` Endpoint
+
+A server-side `POST` route that consolidates all profile-creation logic:
+
+```
+POST /api/auth/finalize
+  → Read session from cookies (set by the client before calling this)
+  → Get user from Supabase
+  → Does teachers table have a row with this email?
+        YES → upsert profiles + link teacher → return { destination: "/teacher" }
+        NO  → Does students table have a row with this email?
+                  YES → upsert profiles + link student → return { destination: "/student" }
+                  NO  → Does profiles row exist?
+                            YES → return { destination: "/admin" | "/teacher" | "/student" }
+                            NO  → return { destination: "/onboard" }
+```
+
+This is the same logic as `/auth/callback`, but exposed as an API so the client-side hash-flow pages can call it after setting the session client-side.
 
 ---
 
@@ -400,11 +453,15 @@ Every dashboard layout calls `initSession()` when it mounts:
 2. Query `profiles` table with their user ID — get their role and entity ID.
 3. Based on the role, fetch the full entity data:
    - Admin → fetch institution row
-   - Teacher → fetch teacher row (from `teachers_with_stats` view) + institution row
-   - Student → fetch student row + institution row + teacher row (3 fetches, 2 in parallel)
+   - Teacher → fetch teacher row (from `teachers_with_stats` view) + institution row (parallel)
+   - Student → fetch student row, then institution + teacher rows in parallel
 4. Set `activeSession` in the store.
 
-A **guard** prevents two simultaneous `initSession()` calls (all three layouts mount at the same time when the dashboard first loads, and without the guard they'd all fire three database queries).
+A **guard** (`_initInFlight` flag) prevents two simultaneous `initSession()` calls (all three layouts mount at the same time when the dashboard first loads, and without the guard they'd all fire concurrent database queries).
+
+### Teacher Session Fallback
+
+For teachers, `initSession()` first tries the `teachers_with_stats` database view (which includes `studentCount` and `testCount`). If the view isn't available or returns nothing, it falls back to the base `teachers` table and sets counts to 0. This keeps the app working even if the view hasn't been created in a new Supabase project yet.
 
 ---
 
@@ -542,6 +599,24 @@ The teacher only needs to touch the grading interface for written answers.
 
 ---
 
+### Dual Auth Flow — PKCE and Hash
+
+Supabase invite links can arrive in two formats depending on the Supabase project configuration and the user's email client:
+
+- **PKCE (`?code=XXX`)** — the modern, secure flow. The code is a one-time token. The browser must exchange it via a server-side request. `/auth/callback` handles this.
+- **Implicit/Hash (`#access_token=XXX`)** — a legacy flow. Tokens arrive in the URL fragment, which browsers never send to servers. A client-side page must read `window.location.hash` and set the session using the tokens directly.
+
+The invite landing page (`/invite/teacher/[teacherId]`) detects which format it received and routes accordingly:
+- `?code=` → full-page navigation to `/auth/callback?code=XXX` so the server handles the exchange and sets the cookie.
+- `#access_token=` → calls `supabase.auth.setSession()` in the browser, then POSTs to `/api/auth/finalize` for profile creation.
+- `?error=` → shows a friendly "link expired" error message.
+
+`/auth/confirm/page.tsx` provides the same hash-flow handling for the admin email confirmation case (when an admin signs up and Supabase sends an `#access_token` confirmation link).
+
+**Why not use `onAuthStateChange`?** The `SIGNED_IN` event fired by `onAuthStateChange` is delayed by a `setTimeout(0)` inside the Supabase library. This creates a race condition: if you set up the subscription after the event already fired, you miss it. Calling `setSession()` directly and then hitting `/api/auth/finalize` is synchronous and deterministic.
+
+---
+
 ### Database Triggers for Denormalization
 
 Some counts (tests per teacher, students per batch) are accessed very frequently. Recalculating them with a `COUNT(*)` query every time a dashboard loads would be slow.
@@ -554,7 +629,63 @@ The app reads these cached numbers instantly without expensive joins.
 
 ---
 
-## 13. Glossary
+## 13. Dashboards — What's Built
+
+### Admin Dashboard (`/admin`)
+
+Stats overview and quick actions. Pulls institution-level numbers from Supabase.
+
+### Admin Teachers Page (`/admin/teachers`)
+
+Full teacher management — invite, activate/deactivate, remove. Sends branded invite emails via Resend.
+
+### Admin Analytics Page (`/admin/analytics`)
+
+Institution-wide analytics powered by live Supabase queries and Recharts:
+
+| Chart | What it shows |
+|---|---|
+| **Monthly Test Activity** (line chart) | Tests created and submissions per month for the last 6 months |
+| **Teacher Activity** (bar chart) | Tests created per teacher |
+| **Tests by Subject** (donut pie chart) | Subject distribution across all tests ever created |
+| **Top Performing Students** (table) | Top 5 students by overall score with rank medals and visual score bars |
+
+All charts show skeleton placeholders while data loads. Empty states are shown when there is no data yet.
+
+### Teacher Layout (`/teacher/*`)
+
+The teacher layout wraps every `/teacher/*` page with:
+- **DashboardNav** — top bar with the Facultify logo and user menu
+- **DashboardSidebar** — left sidebar with links to Dashboard, My Students, My Tests, Create Test, AI Generator, Grading Center
+
+Role guard: if the session is not a teacher, redirects to `/dashboard`.
+
+### Teacher Students Page (`/teacher/students`)
+
+Full student and batch management:
+
+**Two tabs:**
+- **All Students** — searchable table by name, email, or roll number. Columns: avatar + name, email, roll no., batch badge, overall score (colour-coded), tests attempted, remove action.
+- **By Batch** — expandable batch cards. Each card shows the batch name, subject, student count, and class average score. Expanding the card shows the students in a table.
+
+**Dialogs:**
+- **Add Student** — name, email, roll number (optional, auto-generated if blank), batch selector. On save: inserts to database + sends an invite email via `/api/invite-student`.
+- **Create Batch** — name and subject. Creates a new batch in the database.
+- **Remove Student** — AlertDialog confirmation before deletion.
+
+**Score badge colours:** green ≥ 80%, yellow ≥ 60%, red < 60%, grey for no score.
+
+### Student Layout (`/student/*`)
+
+Same pattern as teacher layout. Sidebar links: Dashboard, My Tests, Performance, Profile. Role guard redirects to `/dashboard`.
+
+### Teacher `[id]` Redirect (`/teacher/[id]`)
+
+When a teacher's invite email points to `/teacher/[teacherId]` as a landing page, this route immediately redirects to `/teacher`. It exists only to handle the invite link URL format and does no meaningful work itself.
+
+---
+
+## 14. Glossary
 
 | Term | Meaning |
 |---|---|
