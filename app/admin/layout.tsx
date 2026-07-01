@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/app-store";
 import DashboardNav from "@/components/dashboards/DashboardNav";
@@ -18,16 +18,18 @@ const NAV_ITEMS = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { activeSession, sessionLoading, initSession } = useAppStore();
-
-  useEffect(() => { initSession(); }, []);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (sessionLoading) return;
-    if (!activeSession) { router.replace("/auth/login"); return; }
-    if (activeSession.role !== "admin") { router.replace(`/${activeSession.role}`); }
-  }, [sessionLoading, activeSession]);
+    initSession().finally(() => setReady(true));
+  }, []);
 
-  if (sessionLoading) {
+  useEffect(() => {
+    if (!ready || sessionLoading) return;
+    if (!activeSession || activeSession.role !== "admin") router.replace("/dashboard");
+  }, [ready, sessionLoading, activeSession, router]);
+
+  if (!ready || sessionLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-50">
         <div className="flex items-center gap-3 text-slate-400 text-sm">

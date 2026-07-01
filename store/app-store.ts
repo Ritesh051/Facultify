@@ -98,7 +98,7 @@ export const useAppStore = create<AppState>()((set) => ({
         .maybeSingle();
 
       if (!profile) {
-        // Auth user exists but no profile yet → needs onboarding
+        console.warn("[initSession] no profile for user:", user.id, user.email);
         set({ activeSession: null, sessionLoading: false });
         _initInFlight = false;
         return;
@@ -127,17 +127,43 @@ export const useAppStore = create<AppState>()((set) => ({
         });
 
       } else if (profile.role === "teacher") {
-        const [{ data: teacher }, { data: inst }] = await Promise.all([
+        // Try the stats view first; fall back to the base table so a missing view
+        // doesn't silently block the teacher from reaching their dashboard.
+        const [viewResult, instResult] = await Promise.all([
           supabase.from("teachers_with_stats").select("*").eq("id", profile.entity_id).single(),
           supabase.from("institutions").select("*").eq("id", profile.institution_id).single(),
         ]);
 
-        if (!teacher || !inst) { set({ activeSession: null, sessionLoading: false }); _initInFlight = false; return; }
+        let teacherRow = viewResult.data;
+
+        if (!teacherRow) {
+          // Fallback: query base table directly (stats will be 0 until page refreshes)
+          const { data: base, error: baseErr } = await supabase
+            .from("teachers")
+            .select("*")
+            .eq("id", profile.entity_id)
+            .single();
+          if (baseErr || !base) {
+            console.error("[initSession] teacher row not found:", viewResult.error, baseErr);
+            set({ activeSession: null, sessionLoading: false });
+            _initInFlight = false;
+            return;
+          }
+          teacherRow = { ...base, student_count: 0, test_count: 0 };
+        }
+
+        const inst = instResult.data;
+        if (!inst) {
+          console.error("[initSession] institution not found:", instResult.error);
+          set({ activeSession: null, sessionLoading: false });
+          _initInFlight = false;
+          return;
+        }
 
         set({
           activeSession: {
             role: "teacher",
-            user: toTeacher(teacher as Record<string, unknown>),
+            user: toTeacher(teacherRow as Record<string, unknown>),
             institution: toInstitution(inst as Record<string, unknown>),
           },
           sessionLoading: false,
@@ -169,7 +195,8 @@ export const useAppStore = create<AppState>()((set) => ({
           sessionLoading: false,
         });
       }
-    } catch {
+    } catch (err) {
+      console.error("[initSession] unexpected error:", err);
       set({ activeSession: null, sessionLoading: false });
     } finally {
       _initInFlight = false;

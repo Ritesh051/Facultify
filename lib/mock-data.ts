@@ -627,6 +627,9 @@ export const ADMIN_ANALYTICS: AdminAnalytics = {
   avgInstitutionScore: 78,
   aiGenerationsUsed: 34,
   aiGenerationsLimit: 100,
+  teachersTrend: 0,
+  studentsTrend: 0,
+  testsTrend: 0,
 };
 
 export const TEACHER_ANALYTICS: TeacherAnalytics = {

@@ -259,7 +259,7 @@ export default function AdminDashboard() {
               subtitle={`of ${analytics?.totalTeachers ?? "—"} total`}
               icon={Users}
               color="blue"
-              trend={{ value: 12, label: "vs last month" }}
+              trend={analytics?.teachersTrend !== undefined ? { value: analytics.teachersTrend, label: "vs last month" } : undefined}
             />
             <StatsCard
               title="Enrolled Students"
@@ -267,7 +267,7 @@ export default function AdminDashboard() {
               subtitle={`${analytics?.activeStudents ?? "—"} active`}
               icon={GraduationCap}
               color="green"
-              trend={{ value: 8, label: "vs last month" }}
+              trend={analytics?.studentsTrend !== undefined ? { value: analytics.studentsTrend, label: "vs last month" } : undefined}
             />
             <StatsCard
               title="Tests Created"
@@ -275,7 +275,7 @@ export default function AdminDashboard() {
               subtitle={`${analytics?.testsThisMonth ?? "—"} this month`}
               icon={FileText}
               color="purple"
-              trend={{ value: 3, label: "vs last month" }}
+              trend={analytics?.testsTrend !== undefined ? { value: analytics.testsTrend, label: "vs last month" } : undefined}
             />
             <StatsCard
               title="AI Credits Used"

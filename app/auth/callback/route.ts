@@ -3,9 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Untyped service-role client — same pattern as supabase-service.ts.
-// Used here because the invited user has no profile yet, so RLS blocks
-// the anon client for teachers/students lookups.
 function createAdminDb() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -48,57 +45,49 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/auth/login", request.url));
   }
 
-  // Check for unlinked invite rows FIRST — before the existing-profile check.
-  // This handles the case where the invited user already has a Supabase account
-  // (e.g. signed up as admin) but was also invited as a teacher or student.
   const adminDb = createAdminDb();
+  const email = (user.email ?? "").toLowerCase();
 
   const { data: teacher } = await adminDb
     .from("teachers")
-    .select("id, institution_id, user_id")
-    .eq("email", user.email!)
+    .select("id, institution_id")
+    .ilike("email", email)
     .maybeSingle();
 
-  if (teacher && (!teacher.user_id || teacher.user_id === user.id)) {
+  if (teacher) {
     await adminDb.from("profiles").upsert(
       { id: user.id, institution_id: teacher.institution_id, role: "teacher", entity_id: teacher.id },
       { onConflict: "id" }
     );
-    if (!teacher.user_id) {
-      await adminDb.from("teachers").update({ user_id: user.id }).eq("id", teacher.id);
-    }
+    await adminDb.from("teachers").update({ user_id: user.id }).eq("id", teacher.id);
     return NextResponse.redirect(new URL("/teacher", request.url));
   }
 
   const { data: student } = await adminDb
     .from("students")
-    .select("id, institution_id, user_id")
-    .eq("email", user.email!)
+    .select("id, institution_id")
+    .ilike("email", email)
     .maybeSingle();
 
-  if (student && (!student.user_id || student.user_id === user.id)) {
+  if (student) {
     await adminDb.from("profiles").upsert(
       { id: user.id, institution_id: student.institution_id, role: "student", entity_id: student.id },
       { onConflict: "id" }
     );
-    if (!student.user_id) {
-      await adminDb.from("students").update({ user_id: user.id }).eq("id", student.id);
-    }
+    await adminDb.from("students").update({ user_id: user.id }).eq("id", student.id);
     return NextResponse.redirect(new URL("/student", request.url));
   }
 
-  // No unlinked invite row → existing profile → send to their dashboard
+  // Existing profile — route directly to their dashboard
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profile) {
-    const routes: Record<string, string> = { admin: "/admin", teacher: "/teacher", student: "/student" };
-    return NextResponse.redirect(new URL(routes[profile.role] ?? "/", request.url));
-  }
+  if (profile?.role === "teacher") return NextResponse.redirect(new URL("/teacher", request.url));
+  if (profile?.role === "student") return NextResponse.redirect(new URL("/student", request.url));
+  if (profile?.role === "admin")   return NextResponse.redirect(new URL("/admin",   request.url));
 
-  // Brand-new admin with no institution yet → onboarding wizard
   return NextResponse.redirect(new URL("/onboard", request.url));
 }

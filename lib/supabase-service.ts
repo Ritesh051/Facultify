@@ -301,20 +301,28 @@ export async function inviteTeacher(
   data: { name: string; email: string; subject: string }
 ): Promise<Teacher> {
   const supabase = createClient()
+  const email = data.email.toLowerCase().trim()
+
+  // Enforce global email uniqueness before inserting
+  const { data: existing } = await supabase
+    .from('teachers')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle()
+  if (existing) throw new Error('A teacher with this email already exists.')
+
   const { data: teacher, error } = await supabase
     .from('teachers')
     .insert({
       institution_id: institutionId,
-      name:           data.name,
-      email:          data.email,
-      subject:        data.subject,
+      name:           data.name.trim(),
+      email,
+      subject:        data.subject.trim(),
       is_active:      true,
     })
     .select()
     .single()
   if (error) throw error
-  // Note: to send an invite email use the admin client in a Server Action:
-  //   await createAdminClient().auth.admin.inviteUserByEmail(data.email)
   return toTeacher({ ...teacher as Record<string, unknown>, student_count: 0, test_count: 0 })
 }
 
@@ -819,8 +827,8 @@ export async function getAdminAnalytics(institutionId: string): Promise<AdminAna
   const supabase = createClient()
 
   const [teachersRes, studentsRes, testsRes, instRes] = await Promise.all([
-    supabase.from('teachers').select('id, is_active').eq('institution_id', institutionId),
-    supabase.from('students').select('id, is_active').eq('institution_id', institutionId),
+    supabase.from('teachers').select('id, is_active, joined_at').eq('institution_id', institutionId),
+    supabase.from('students').select('id, is_active, enrolled_at').eq('institution_id', institutionId),
     supabase.from('tests').select('id, created_at').eq('institution_id', institutionId),
     supabase.from('institutions').select('ai_generations_used, ai_generations_limit').eq('id', institutionId).single(),
   ])
@@ -834,6 +842,9 @@ export async function getAdminAnalytics(institutionId: string): Promise<AdminAna
   thisMonthStart.setDate(1)
   thisMonthStart.setHours(0, 0, 0, 0)
 
+  const lastMonthStart = new Date(thisMonthStart)
+  lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)
+
   const allSubs = await supabase
     .from('submissions')
     .select('percentage')
@@ -846,6 +857,24 @@ export async function getAdminAnalytics(institutionId: string): Promise<AdminAna
       )
     : 0
 
+  const teachersThisMonth = teachers.filter(t => new Date(t.joined_at) >= thisMonthStart).length
+  const teachersLastMonth = teachers.filter(t => {
+    const d = new Date(t.joined_at)
+    return d >= lastMonthStart && d < thisMonthStart
+  }).length
+
+  const studentsThisMonth = students.filter(s => new Date(s.enrolled_at) >= thisMonthStart).length
+  const studentsLastMonth = students.filter(s => {
+    const d = new Date(s.enrolled_at)
+    return d >= lastMonthStart && d < thisMonthStart
+  }).length
+
+  const testsThisMonth = tests.filter(t => new Date(t.created_at) >= thisMonthStart).length
+  const testsLastMonth = tests.filter(t => {
+    const d = new Date(t.created_at)
+    return d >= lastMonthStart && d < thisMonthStart
+  }).length
+
   return {
     institutionId,
     totalTeachers:       teachers.length,
@@ -853,10 +882,13 @@ export async function getAdminAnalytics(institutionId: string): Promise<AdminAna
     totalStudents:       students.length,
     activeStudents:      students.filter(s => s.is_active).length,
     totalTestsCreated:   tests.length,
-    testsThisMonth:      tests.filter(t => new Date(t.created_at) >= thisMonthStart).length,
+    testsThisMonth,
     avgInstitutionScore: avgScore,
     aiGenerationsUsed:   inst?.ai_generations_used ?? 0,
     aiGenerationsLimit:  inst?.ai_generations_limit ?? 20,
+    teachersTrend:       teachersThisMonth - teachersLastMonth,
+    studentsTrend:       studentsThisMonth - studentsLastMonth,
+    testsTrend:          testsThisMonth - testsLastMonth,
   }
 }
 

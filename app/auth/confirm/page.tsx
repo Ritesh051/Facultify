@@ -10,37 +10,47 @@ export default function ConfirmPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // Only run when there's a hash token — direct navigation gets sent to login.
-    if (!window.location.hash.includes("access_token")) {
-      router.replace("/auth/login");
-      return;
-    }
+    (async () => {
+      const hash = window.location.hash;
 
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-
-    // createBrowserClient auto-detects #access_token in the hash and calls
-    // setSession internally. onAuthStateChange fires with SIGNED_IN when done.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        // SIGNED_IN fires for new sign-ins; INITIAL_SESSION fires when subscribing
-        // to a client that already processed the hash token before this effect ran.
-        if (event !== "SIGNED_IN" && event !== "INITIAL_SESSION") return;
-        if (!session) return;
-        try {
-          const res = await fetch("/api/auth/finalize", { method: "POST" });
-          const json = await res.json();
-          if (json.error) { setError(json.error); return; }
-          router.replace(json.destination ?? "/auth/login");
-        } catch {
-          setError("Something went wrong. Please try again.");
-        }
+      if (!hash.includes("access_token")) {
+        router.replace("/auth/login");
+        return;
       }
-    );
 
-    return () => subscription.unsubscribe();
+      const hashParams   = new URLSearchParams(hash.substring(1));
+      const accessToken  = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token") ?? "";
+
+      if (!accessToken) {
+        router.replace("/auth/login");
+        return;
+      }
+
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token:  accessToken,
+        refresh_token: refreshToken,
+      });
+
+      if (sessionError) {
+        setError("This link has expired or is invalid. Please try again.");
+        return;
+      }
+
+      try {
+        const res  = await fetch("/api/auth/finalize", { method: "POST" });
+        const json = await res.json();
+        if (json.error) { setError(json.error); return; }
+        router.replace(json.destination ?? "/auth/login");
+      } catch {
+        setError("Something went wrong. Please try again.");
+      }
+    })();
   }, [router]);
 
   if (error) {

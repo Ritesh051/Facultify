@@ -176,6 +176,9 @@ export interface AdminAnalytics {
   avgInstitutionScore: number;
   aiGenerationsUsed: number;
   aiGenerationsLimit: number;
+  teachersTrend: number;
+  studentsTrend: number;
+  testsTrend: number;
 }
 
 export interface TeacherAnalytics {

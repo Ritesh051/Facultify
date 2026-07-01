@@ -11,8 +11,6 @@ function createAdminDb() {
   );
 }
 
-// Called by /auth/confirm after the browser client processes a hash-based
-// (implicit flow) magic link. The session is already in cookies at this point.
 export async function POST() {
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -32,59 +30,55 @@ export async function POST() {
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
+    console.error("[finalize] getUser returned null — session cookies missing");
     return NextResponse.json({ error: "Not authenticated" });
   }
 
-  // Check unlinked invite rows FIRST — same priority logic as /auth/callback/route.ts.
-  // Handles the case where the invited user already has a Supabase account
-  // (e.g. signed up as admin) but was also invited as a teacher or student.
   const adminDb = createAdminDb();
+  const email = (user.email ?? "").toLowerCase();
+  console.log("[finalize] user.id:", user.id, "email:", email);
 
-  const { data: teacher } = await adminDb
+  const { data: teacher, error: teacherErr } = await adminDb
     .from("teachers")
-    .select("id, institution_id, user_id")
-    .eq("email", user.email!)
+    .select("id, institution_id")
+    .ilike("email", email)
     .maybeSingle();
+  console.log("[finalize] teacher lookup →", teacher, "error:", teacherErr);
 
-  if (teacher && (!teacher.user_id || teacher.user_id === user.id)) {
+  if (teacher) {
     await adminDb.from("profiles").upsert(
       { id: user.id, institution_id: teacher.institution_id, role: "teacher", entity_id: teacher.id },
       { onConflict: "id" }
     );
-    if (!teacher.user_id) {
-      await adminDb.from("teachers").update({ user_id: user.id }).eq("id", teacher.id);
-    }
+    await adminDb.from("teachers").update({ user_id: user.id }).eq("id", teacher.id);
     return NextResponse.json({ destination: "/teacher" });
   }
 
   const { data: student } = await adminDb
     .from("students")
-    .select("id, institution_id, user_id")
-    .eq("email", user.email!)
+    .select("id, institution_id")
+    .ilike("email", email)        // same fix
     .maybeSingle();
 
-  if (student && (!student.user_id || student.user_id === user.id)) {
+  if (student) {
     await adminDb.from("profiles").upsert(
       { id: user.id, institution_id: student.institution_id, role: "student", entity_id: student.id },
       { onConflict: "id" }
     );
-    if (!student.user_id) {
-      await adminDb.from("students").update({ user_id: user.id }).eq("id", student.id);
-    }
+    await adminDb.from("students").update({ user_id: user.id }).eq("id", student.id);
     return NextResponse.json({ destination: "/student" });
   }
 
-  // No unlinked invite row → existing profile → send to their dashboard
+  // Existing profile — route directly to their dashboard
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profile) {
-    const routes: Record<string, string> = { admin: "/admin", teacher: "/teacher", student: "/student" };
-    return NextResponse.json({ destination: routes[profile.role] ?? "/" });
-  }
+  if (profile?.role === "teacher") return NextResponse.json({ destination: "/teacher" });
+  if (profile?.role === "student") return NextResponse.json({ destination: "/student" });
+  if (profile?.role === "admin")   return NextResponse.json({ destination: "/admin" });
 
   return NextResponse.json({ destination: "/onboard" });
 }

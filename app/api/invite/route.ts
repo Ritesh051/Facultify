@@ -6,7 +6,7 @@ import { sendTeacherInviteEmail } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
-  const { email, name, subject, institutionId, institutionName } = body ?? {};
+  const { email, name, subject, institutionId, institutionName, teacherId } = body ?? {};
 
   if (!email || !name || !institutionId) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
@@ -49,15 +49,24 @@ export async function POST(request: NextRequest) {
   }
 
   const adminClient = createAdminClient();
-  const origin = request.headers.get("origin") ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  // Use the app's own origin — never fall back to the Supabase project URL
+  const origin =
+    request.headers.get("origin") ??
+    `${request.nextUrl.protocol}//${request.nextUrl.host}`;
 
-  // Generate an invite magic link (does NOT send Supabase's default email)
+  // Dedicated invite-acceptance page for this specific teacher.
+  // Using /invite/teacher/[id] instead of /auth/confirm avoids the teacher
+  // layout's stale-store redirect bug entirely — this page has no layout.
+  const inviteRedirect = teacherId
+    ? `${origin}/invite/teacher/${teacherId}`
+    : `${origin}/auth/confirm`;
+
   const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
     type: "invite",
     email,
     options: {
       data: { full_name: name, role: "teacher" },
-      redirectTo: `${origin}/auth/callback`,
+      redirectTo: inviteRedirect,
     },
   });
 
@@ -69,7 +78,7 @@ export async function POST(request: NextRequest) {
     const { data: signinData } = await adminClient.auth.admin.generateLink({
       type: "magiclink",
       email,
-      options: { redirectTo: `${origin}/auth/confirm` },
+      options: { redirectTo: inviteRedirect },
     });
     magicLink = signinData?.properties?.action_link ?? `${origin}/auth/login`;
   } else if (linkError) {
@@ -77,7 +86,8 @@ export async function POST(request: NextRequest) {
   } else {
     magicLink = `${origin}/auth/login`;
   }
-  const dashboardUrl = `${origin}/teacher`;
+
+  const dashboardUrl = teacherId ? `${origin}/teacher/${teacherId}` : `${origin}/teacher`;
 
   // Send a rich custom email via Resend
   const { error: emailError } = await sendTeacherInviteEmail({

@@ -45,16 +45,18 @@ create table profiles (
 -- ─── Teachers ─────────────────────────────────────────────────────────────────
 create table teachers (
   id              uuid primary key default gen_random_uuid(),
-  user_id         uuid references auth.users on delete set null,  -- null until invite accepted
+  user_id         uuid references auth.users on delete set null,
   institution_id  uuid not null references institutions on delete cascade,
   name            text not null,
-  email           text not null,
+  email           text not null, -- Removed global 'unique' here
   subject         text not null,
   avatar_url      text,
   is_active       boolean not null default true,
-  joined_at       timestamptz not null default now()
+  joined_at       timestamptz not null default now(),
+  
+  -- Enforces one email per institution
+  unique (institution_id, email) 
 );
-
 -- ─── Batches ──────────────────────────────────────────────────────────────────
 create table batches (
   id              uuid primary key default gen_random_uuid(),

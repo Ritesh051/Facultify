@@ -80,7 +80,7 @@ export async function sendTeacherInviteEmail({
 
             <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">
               Or copy this link:<br/>
-              <a href="${dashboardUrl}" style="color:#2563eb;font-size:12px;word-break:break-all;">${dashboardUrl}</a>
+              <a href="${magicLink}" style="color:#2563eb;font-size:12px;word-break:break-all;">${magicLink}</a>
             </p>
           </td>
         </tr>

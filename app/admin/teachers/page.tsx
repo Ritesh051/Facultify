@@ -180,8 +180,8 @@ export default function TeachersPage() {
     setSubmitting(true);
     try {
       const created = await inviteTeacher(institutionId, {
-        name: form.name.trim(),
-        email: form.email.trim(),
+        name:    form.name.trim(),
+        email:   form.email.trim(),
         subject: form.subject.trim(),
       });
 
@@ -197,6 +197,7 @@ export default function TeachersPage() {
           subject:         created.subject,
           institutionId,
           institutionName,
+          teacherId:       created.id,
         }),
       });
 
@@ -215,8 +216,9 @@ export default function TeachersPage() {
 
       setInviteOpen(false);
       setForm({ name: "", email: "", subject: "" });
-    } catch {
-      toast.error("Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }

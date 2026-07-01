@@ -31,7 +31,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/admin') ||
     pathname.startsWith('/teacher') ||
     pathname.startsWith('/student') ||
+    pathname.startsWith('/dashboard') ||
     pathname === '/onboard'
+  // /invite/* is public — unauthenticated teachers land here to set up their account
 
   if (!user && isProtected) {
     const loginUrl = new URL('/auth/login', request.url)
@@ -50,7 +52,9 @@ export const config = {
     '/admin/:path*',
     '/teacher/:path*',
     '/student/:path*',
+    '/dashboard',
     '/onboard',
     '/auth/:path*',
+    '/invite/:path*',
   ],
 }
