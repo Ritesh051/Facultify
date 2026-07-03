@@ -128,6 +128,9 @@ export interface MockTest {
   durationMinutes: number;
   scheduledAt?: string;
   closesAt?: string;
+  resultDelayMinutes: number;
+  resultsDeclared: boolean;
+  resultsDeclaredAt?: string;
   createdAt: string;
   questions: Question[];
   aiGenerated: boolean;
@@ -248,6 +251,7 @@ export interface CreateTestFormData {
   durationMinutes: number;
   scheduledAt?: string;
   closesAt?: string;
+  resultDelayMinutes?: number;
 }
 
 export interface AIGeneratorConfig {

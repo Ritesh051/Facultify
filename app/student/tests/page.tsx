@@ -29,7 +29,7 @@ import PageHeader from "@/components/dashboards/PageHeader";
 import EmptyState from "@/components/dashboards/EmptyState";
 import ScoreBadge from "@/components/testing/ScoreBadge";
 import { useAppStore } from "@/store/app-store";
-import { getStudentTests, getStudentSubmissions } from "@/lib/supabase-service";
+import { getStudentTests, getStudentSubmissions, isResultVisible } from "@/lib/supabase-service";
 import { formatDate, formatDateTime, cn } from "@/lib/utils";
 import type { MockTest, Submission } from "@/lib/types";
 
@@ -330,6 +330,8 @@ export default function StudentTestsPage() {
                       {completed.map((s) => {
                         const testTitle =
                           testMap.get(s.testId)?.title ?? "Test";
+                        const test = testMap.get(s.testId);
+                        const resultVisible = test ? isResultVisible(test, s) : false;
                         return (
                           <TableRow key={s.id}>
                             {/* Title */}
@@ -346,14 +348,14 @@ export default function StudentTestsPage() {
 
                             {/* Score */}
                             <TableCell className="text-center text-sm tabular-nums font-medium">
-                              {s.status === "graded"
+                              {resultVisible
                                 ? `${s.totalScore} / ${s.maxScore}`
                                 : <span className="text-muted-foreground text-xs">Pending</span>}
                             </TableCell>
 
                             {/* Percentage badge */}
                             <TableCell className="text-center">
-                              {s.status === "graded" ? (
+                              {resultVisible ? (
                                 <ScoreBadge
                                   score={s.totalScore}
                                   maxScore={s.maxScore}
@@ -377,7 +379,7 @@ export default function StudentTestsPage() {
 
                             {/* View results */}
                             <TableCell className="text-right">
-                              {s.status === "graded" ? (
+                              {resultVisible ? (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -392,7 +394,7 @@ export default function StudentTestsPage() {
                                 </Button>
                               ) : (
                                 <span className="text-xs text-muted-foreground">
-                                  Awaiting grade
+                                  Result not yet declared
                                 </span>
                               )}
                             </TableCell>
@@ -464,6 +466,8 @@ export default function StudentTestsPage() {
                             {completed.map((s) => {
                               const testTitle =
                                 testMap.get(s.testId)?.title ?? "Test";
+                              const test = testMap.get(s.testId);
+                              const resultVisible = test ? isResultVisible(test, s) : false;
                               return (
                                 <TableRow key={s.id}>
                                   <TableCell>
@@ -477,12 +481,12 @@ export default function StudentTestsPage() {
                                     </div>
                                   </TableCell>
                                   <TableCell className="text-center text-sm tabular-nums font-medium">
-                                    {s.status === "graded"
+                                    {resultVisible
                                       ? `${s.totalScore} / ${s.maxScore}`
                                       : <span className="text-muted-foreground text-xs">Pending</span>}
                                   </TableCell>
                                   <TableCell className="text-center">
-                                    {s.status === "graded" ? (
+                                    {resultVisible ? (
                                       <ScoreBadge
                                         score={s.totalScore}
                                         maxScore={s.maxScore}
@@ -500,7 +504,7 @@ export default function StudentTestsPage() {
                                     {s.submittedAt ? formatDate(s.submittedAt) : "—"}
                                   </TableCell>
                                   <TableCell className="text-right">
-                                    {s.status === "graded" ? (
+                                    {resultVisible ? (
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -515,7 +519,7 @@ export default function StudentTestsPage() {
                                       </Button>
                                     ) : (
                                       <span className="text-xs text-muted-foreground">
-                                        Awaiting grade
+                                        Result not yet declared
                                       </span>
                                     )}
                                   </TableCell>

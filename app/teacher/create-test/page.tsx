@@ -316,6 +316,7 @@ export default function CreateTestPage() {
     durationMinutes: 60,
     scheduledAt: "",
     closesAt: "",
+    resultDelayMinutes: 2,
   });
 
   const qFormRef = useRef<HTMLDivElement>(null);
@@ -361,6 +362,8 @@ export default function CreateTestPage() {
         durationMinutes: details.durationMinutes,
         scheduledAt: details.scheduledAt || undefined,
         closesAt: details.closesAt || undefined,
+        resultDelayMinutes: details.resultDelayMinutes ?? 2,
+        resultsDeclared: false,
         aiGenerated: false,
       });
       setTest(t);
@@ -613,6 +616,34 @@ export default function CreateTestPage() {
                   onChange={(e) => setDetails((d) => ({ ...d, closesAt: e.target.value }))}
                 />
               </div>
+            </div>
+
+            {/* Result reveal timing */}
+            <div className="space-y-1.5">
+              <Label htmlFor="resultDelayMinutes">Declare results to students</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="resultDelayMinutes"
+                  type="number"
+                  min={0}
+                  max={1440}
+                  className="w-28"
+                  value={details.resultDelayMinutes}
+                  onChange={(e) =>
+                    setDetails((d) => ({
+                      ...d,
+                      resultDelayMinutes: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                />
+                <span className="text-sm text-muted-foreground">
+                  minutes after each student submits
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Results are revealed automatically after this delay. You can also declare
+                them for the whole class earlier at any time from the Tests page.
+              </p>
             </div>
 
             <Separator />

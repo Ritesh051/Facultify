@@ -44,36 +44,84 @@ interface TooltipPayloadItem {
   payload: { label?: string; fullTitle?: string; pct?: number };
 }
 
-// ─── AI Insights (mock) ───────────────────────────────────────────────────────
-
-const AI_INSIGHTS = [
-  {
-    icon: Star,
-    color: "emerald",
-    headline: "Strong in Algebra",
-    detail: "+12% above class average. Your factoring and equation-solving speed is a real edge.",
-  },
-  {
-    icon: AlertCircle,
-    color: "amber",
-    headline: "Needs focus on Trigonometry",
-    detail:
-      "Trigonometry sits 10 points below your average. Two targeted practice sessions could close that gap.",
-  },
-  {
-    icon: Flame,
-    color: "indigo",
-    headline: "Improvement streak: 3 tests",
-    detail:
-      "You've scored higher on each of your last 3 tests. Consistency like this compounds fast.",
-  },
-];
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function pct(score: number, max: number): number {
   if (max === 0) return 0;
   return Math.round((score / max) * 100);
+}
+
+interface Insight {
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  headline: string;
+  detail: string;
+}
+
+// Derives insight cards from the student's real submission history —
+// no hardcoded/mock content.
+function computeInsights(a: StudentAnalytics): Insight[] {
+  const insights: Insight[] = [];
+  if (a.testsAttempted === 0) return insights;
+
+  if (a.subjectBreakdown.length > 1 && a.bestSubject && a.weakSubject && a.bestSubject !== a.weakSubject) {
+    const best = a.subjectBreakdown.find((s) => s.subject === a.bestSubject);
+    const weak = a.subjectBreakdown.find((s) => s.subject === a.weakSubject);
+
+    if (best) {
+      const diff = best.avgScore - a.overallScore;
+      insights.push({
+        icon: Star,
+        color: "emerald",
+        headline: `Strong in ${a.bestSubject}`,
+        detail:
+          diff > 0
+            ? `${diff}% above your overall average of ${a.overallScore}%.`
+            : `Averaging ${best.avgScore}% — your most consistent subject so far.`,
+      });
+    }
+
+    if (weak) {
+      const gap = a.overallScore - weak.avgScore;
+      insights.push({
+        icon: AlertCircle,
+        color: "amber",
+        headline: `Needs focus on ${a.weakSubject}`,
+        detail:
+          gap > 0
+            ? `${a.weakSubject} sits ${gap}% below your average across your recent tests.`
+            : `Averaging ${weak.avgScore}% in ${a.weakSubject} — keep an eye on it.`,
+      });
+    }
+  }
+
+  // scoreHistory is ordered most-recent-first; walk backwards from the most
+  // recent test to find a trailing run of consecutive score increases.
+  let streak = 1;
+  for (let i = 0; i < a.scoreHistory.length - 1; i++) {
+    const curr = pct(a.scoreHistory[i].score, a.scoreHistory[i].maxScore);
+    const prev = pct(a.scoreHistory[i + 1].score, a.scoreHistory[i + 1].maxScore);
+    if (curr > prev) streak++;
+    else break;
+  }
+
+  if (streak >= 2) {
+    insights.push({
+      icon: Flame,
+      color: "indigo",
+      headline: `Improvement streak: ${streak} tests`,
+      detail: `You've scored higher on each of your last ${streak} tests. Consistency like this compounds fast.`,
+    });
+  } else if (a.testsAttempted >= 2) {
+    insights.push({
+      icon: Clock,
+      color: "indigo",
+      headline: `Averaging ${a.avgTimePerTest} min per test`,
+      detail: `Across ${a.testsAttempted} tests taken so far — use this to help pace upcoming exams.`,
+    });
+  }
+
+  return insights;
 }
 
 function barColor(score: number): string {
@@ -778,11 +826,23 @@ export default function StudentAnalyticsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {AI_INSIGHTS.map((insight, i) => (
-              <InsightCard key={i} {...insight} />
-            ))}
-          </div>
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Skeleton className="h-24 rounded-2xl" />
+              <Skeleton className="h-24 rounded-2xl" />
+              <Skeleton className="h-24 rounded-2xl" />
+            </div>
+          ) : analytics && computeInsights(analytics).length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {computeInsights(analytics).map((insight, i) => (
+                <InsightCard key={i} {...insight} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Not enough test data yet — complete a few more tests to see personalized insights here.
+            </p>
+          )}
 
           {/* Strengths and weaknesses quick summary */}
           {!loading && analytics && (

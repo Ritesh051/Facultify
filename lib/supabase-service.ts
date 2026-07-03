@@ -137,6 +137,9 @@ function toTest(row: Record<string, unknown>): MockTest {
     durationMinutes: row.duration_minutes as number,
     scheduledAt:     (row.scheduled_at as string) ?? undefined,
     closesAt:        (row.closes_at as string) ?? undefined,
+    resultDelayMinutes: (row.result_delay_minutes as number) ?? 2,
+    resultsDeclared:    (row.results_declared as boolean) ?? false,
+    resultsDeclaredAt:  (row.results_declared_at as string) ?? undefined,
     createdAt:       row.created_at as string,
     aiGenerated:     row.ai_generated as boolean,
     attemptCount:    (row.attempt_count as number) ?? 0,
@@ -155,6 +158,18 @@ function toSubmissionAnswer(row: Record<string, unknown>): SubmissionAnswer {
     teacherFeedback:  (row.teacher_feedback as string) ?? undefined,
     timeSpentSeconds: (row.time_spent_seconds as number) ?? 0,
   }
+}
+
+// A student's result becomes visible once the teacher explicitly declares it,
+// or `resultDelayMinutes` after they submitted — whichever comes first.
+export function isResultVisible(
+  test: Pick<MockTest, 'resultsDeclared' | 'resultDelayMinutes'>,
+  submission: Pick<Submission, 'submittedAt'>
+): boolean {
+  if (test.resultsDeclared) return true
+  if (!submission.submittedAt) return false
+  const revealAt = new Date(submission.submittedAt).getTime() + test.resultDelayMinutes * 60_000
+  return Date.now() >= revealAt
 }
 
 function toSubmission(row: Record<string, unknown>): Submission {
@@ -498,6 +513,7 @@ export async function createTest(
       duration_minutes: data.durationMinutes,
       scheduled_at:     data.scheduledAt ?? null,
       closes_at:        data.closesAt ?? null,
+      result_delay_minutes: data.resultDelayMinutes ?? 2,
       ai_generated:     data.aiGenerated,
     })
     .select()
@@ -573,6 +589,34 @@ export async function publishTest(testId: string): Promise<MockTest> {
   const { data, error } = await supabase
     .from('tests')
     .update({ status: 'published' })
+    .eq('id', testId)
+    .select(TEST_SELECT)
+    .single()
+  if (error) throw error
+  return toTest(data as Record<string, unknown>)
+}
+
+// Teacher-triggered override: reveal results to students immediately,
+// regardless of each submission's resultDelayMinutes timer.
+export async function declareResults(testId: string): Promise<MockTest> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('tests')
+    .update({ results_declared: true, results_declared_at: new Date().toISOString() })
+    .eq('id', testId)
+    .select(TEST_SELECT)
+    .single()
+  if (error) throw error
+  return toTest(data as Record<string, unknown>)
+}
+
+// Lets a teacher change how many minutes after submission a result auto-reveals,
+// even after the test has already been created/published.
+export async function updateResultDelayMinutes(testId: string, minutes: number): Promise<MockTest> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('tests')
+    .update({ result_delay_minutes: minutes })
     .eq('id', testId)
     .select(TEST_SELECT)
     .single()
@@ -946,22 +990,32 @@ export async function getStudentAnalytics(studentId: string): Promise<StudentAna
     .from('submissions')
     .select(`
       total_score, max_score, percentage, submitted_at, time_taken_minutes, status,
-      tests!inner(title, subject)
+      tests!inner(title, subject, result_delay_minutes, results_declared)
     `)
     .eq('student_id', studentId)
     .in('status', ['submitted', 'graded'])
     .order('submitted_at', { ascending: false })
     .limit(50)
 
-  const rows = (subs ?? []) as unknown as Array<{
+  const allRows = (subs ?? []) as unknown as Array<{
     total_score: number
     max_score: number
     percentage: number
     submitted_at: string
     time_taken_minutes: number
     status: string
-    tests: Array<{ title: string; subject: string }>
+    tests: Array<{ title: string; subject: string; result_delay_minutes: number; results_declared: boolean }>
   }>
+
+  // Hide scores that haven't been declared yet — same rule as isResultVisible().
+  const rows = allRows.filter(r => {
+    const t = r.tests[0]
+    if (!t) return false
+    return isResultVisible(
+      { resultsDeclared: t.results_declared, resultDelayMinutes: t.result_delay_minutes },
+      { submittedAt: r.submitted_at }
+    )
+  })
 
   const scoreHistory = rows.map(r => ({
     testTitle: r.tests[0]?.title ?? '',

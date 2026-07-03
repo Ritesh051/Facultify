@@ -40,6 +40,7 @@ export interface TestRow {
   id: string; teacher_id: string; institution_id: string; batch_id: string; title: string
   description: string; subject: string; status: TestStatus; total_marks: number
   duration_minutes: number; scheduled_at: string | null; closes_at: string | null
+  result_delay_minutes: number; results_declared: boolean; results_declared_at: string | null
   ai_generated: boolean; attempt_count: number; avg_score: number; created_at: string
 }
 export interface QuestionRow {
@@ -91,6 +92,7 @@ export interface TestInsert {
   id?: string; teacher_id: string; institution_id: string; batch_id: string; title: string
   description?: string; subject: string; status?: TestStatus; total_marks?: number
   duration_minutes: number; scheduled_at?: string | null; closes_at?: string | null
+  result_delay_minutes?: number; results_declared?: boolean; results_declared_at?: string | null
   ai_generated?: boolean; attempt_count?: number; avg_score?: number; created_at?: string
 }
 export interface QuestionInsert {

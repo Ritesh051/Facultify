@@ -11,6 +11,7 @@ import {
   XCircle,
   BookOpenCheck,
   Filter,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,8 +30,14 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import PageHeader from "@/components/dashboards/PageHeader";
 import { useAppStore } from "@/store/app-store";
-import { getTests, getSubmissions, gradeTextAnswer } from "@/lib/supabase-service";
-import { cn } from "@/lib/utils";
+import {
+  getTests,
+  getSubmissions,
+  gradeTextAnswer,
+  declareResults,
+  updateResultDelayMinutes,
+} from "@/lib/supabase-service";
+import { cn, formatDateTime } from "@/lib/utils";
 import type {
   MockTest,
   Submission,
@@ -587,6 +594,10 @@ export default function CheckingCenterPage() {
   const [grades, setGrades] = useState<Record<string, GradeEntry>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
 
+  const [delayInput, setDelayInput] = useState("2");
+  const [savingDelay, setSavingDelay] = useState(false);
+  const [declaringResult, setDeclaringResult] = useState(false);
+
   // Load teacher's non-draft tests
   useEffect(() => {
     setLoadingTests(true);
@@ -609,6 +620,12 @@ export default function CheckingCenterPage() {
       setLoadingSubmissions(false);
     });
   }, [selectedTestId]);
+
+  // Reset the delay input whenever the teacher switches tests
+  useEffect(() => {
+    const t = tests.find((x) => x.id === selectedTestId);
+    if (t) setDelayInput(String(t.resultDelayMinutes));
+  }, [selectedTestId, tests]);
 
   // When a new submission is selected, seed the grade entries from existing data
   const handleSelectSub = useCallback((sub: Submission) => {
@@ -672,12 +689,111 @@ export default function CheckingCenterPage() {
 
   const selectedTest = tests.find((t) => t.id === selectedTestId);
 
+  async function handleSaveDelay() {
+    if (!selectedTest) return;
+    const minutes = parseInt(delayInput, 10);
+    if (isNaN(minutes) || minutes < 0) {
+      toast.error("Enter a valid number of minutes (0 or more).");
+      setDelayInput(String(selectedTest.resultDelayMinutes));
+      return;
+    }
+    if (minutes === selectedTest.resultDelayMinutes) return;
+
+    setSavingDelay(true);
+    try {
+      const updated = await updateResultDelayMinutes(selectedTest.id, minutes);
+      setTests((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      setDelayInput(String(updated.resultDelayMinutes));
+      toast.success(`Results will now auto-declare ${updated.resultDelayMinutes} min after submission.`);
+    } catch {
+      toast.error("Failed to update the timing. Please try again.");
+      setDelayInput(String(selectedTest.resultDelayMinutes));
+    } finally {
+      setSavingDelay(false);
+    }
+  }
+
+  async function handleDeclareNow() {
+    if (!selectedTest) return;
+    setDeclaringResult(true);
+    try {
+      const updated = await declareResults(selectedTest.id);
+      setTests((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      toast.success(`Results for "${selectedTest.title}" are now visible to students.`);
+    } catch {
+      toast.error("Failed to declare results. Please try again.");
+    } finally {
+      setDeclaringResult(false);
+    }
+  }
+
   return (
     <div className="animate-fade-in">
       <PageHeader
         title="Grading Center"
         subtitle="Review student submissions and award marks for text answers."
       />
+
+      {/* Result declaration control — for whichever test is currently selected */}
+      {!loadingTests && selectedTest && (
+        <Card className="mb-4 border-slate-200">
+          <CardContent className="py-4 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100">
+                <Megaphone className="h-4 w-4 text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-800">
+                  Result declaration — {selectedTest.title}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {selectedTest.resultsDeclared ? (
+                    <>
+                      Declared to students
+                      {selectedTest.resultsDeclaredAt
+                        ? ` on ${formatDateTime(selectedTest.resultsDeclaredAt)}`
+                        : ""}
+                      .
+                    </>
+                  ) : (
+                    <>
+                      Auto-declares {selectedTest.resultDelayMinutes} minute
+                      {selectedTest.resultDelayMinutes === 1 ? "" : "s"} after each student
+                      submits, unless you declare it sooner.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {!selectedTest.resultsDeclared && (
+              <div className="flex items-center gap-2 shrink-0">
+                <Label htmlFor="resultDelay" className="text-xs text-muted-foreground whitespace-nowrap">
+                  Delay (min)
+                </Label>
+                <Input
+                  id="resultDelay"
+                  type="number"
+                  min={0}
+                  max={1440}
+                  className="w-20 h-8 text-sm"
+                  value={delayInput}
+                  disabled={savingDelay}
+                  onChange={(e) => setDelayInput(e.target.value)}
+                  onBlur={handleSaveDelay}
+                />
+                <Button
+                  size="sm"
+                  onClick={handleDeclareNow}
+                  disabled={declaringResult}
+                >
+                  {declaringResult ? "Declaring…" : "Declare Now"}
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {loadingTests ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-220px)]">

@@ -19,8 +19,9 @@ A plain-language walkthrough of how this project is built, what every technology
 11. [Email Invites — Resend](#11-email-invites--resend)
 12. [Key Engineering Decisions](#12-key-engineering-decisions)
 13. [Dashboards — What's Built](#13-dashboards--whats-built)
-14. [Testing — Load Testing & End-to-End (Playwright)](#14-testing--load-testing--end-to-end-playwright)
-15. [Glossary](#15-glossary)
+14. [Result Declaration — Teacher-Controlled Reveal Timing](#14-result-declaration--teacher-controlled-reveal-timing)
+15. [Testing — Load Testing & End-to-End (Playwright)](#15-testing--load-testing--end-to-end-playwright)
+16. [Glossary](#16-glossary)
 
 ---
 
@@ -177,7 +178,9 @@ Facultify/
 │   └── app-store.ts             ← Zustand store: logged-in user session
 │
 ├── supabase/
-│   └── schema.sql               ← Full database schema (run once in Supabase)
+│   ├── schema.sql               ← Full database schema (run once, in a brand-new project)
+│   └── migrations/              ← Incremental SQL for existing projects (schema.sql already has these for fresh installs)
+│       └── add_result_declaration.sql
 │
 ├── middleware.ts                 ← Runs before EVERY request: checks auth cookie
 └── .env.local                   ← Secret keys (never commit this file)
@@ -278,7 +281,7 @@ Supabase uses **PostgreSQL** — a powerful relational database. The full schema
 | `teachers` | Teacher records. `user_id` is empty until the teacher accepts their invite and creates an account. |
 | `batches` | Groups of students (e.g. "Class 11 — Section A"). Created by a teacher. |
 | `students` | Student records with batch and teacher assignment. |
-| `tests` | Test configurations — title, subject, duration, schedule, status (draft/published/active/closed). |
+| `tests` | Test configurations — title, subject, duration, schedule, status (draft/published/active/closed). Also holds the result-declaration settings: `result_delay_minutes`, `results_declared`, `results_declared_at` (see [§14](#14-result-declaration--teacher-controlled-reveal-timing)). |
 | `questions` | Questions belonging to a test. Supports MCQ, True/False, and Written types. |
 | `question_options` | Answer options for MCQ and True/False questions. |
 | `submissions` | One row per student-test pair. Tracks status: not_started → in_progress → submitted → graded. |
@@ -572,9 +575,9 @@ The service-role client bypasses this. It can read any row, so it finds the teac
 
 ---
 
-### Two Separate Supabase Clients
+### Three Separate Supabase Clients
 
-There are three Supabase client files for a reason:
+There are three Supabase client files, each scoped to exactly one situation:
 
 | File | Key | Who can use it | When |
 |---|---|---|---|
@@ -680,13 +683,34 @@ Full student and batch management:
 
 Same pattern as teacher layout. Sidebar links: Dashboard, My Tests, Performance, Profile. Role guard redirects to `/dashboard`.
 
+### Student Performance / Analytics Page (`/student/analytics`)
+
+Everything on this page is driven by one call: `getStudentAnalytics(studentId)` in `lib/supabase-service.ts`. It reads the student's own `submissions` (joined with `tests` for title/subject), and returns:
+
+- `overallScore` — average percentage across all visible submissions
+- `testsAttempted` / `testsPassed` (≥ 50%)
+- `avgTimePerTest`
+- `bestSubject` / `weakSubject` — from grouping submissions by subject and averaging
+- `scoreHistory` — one entry per test, most recent first (feeds the score trend chart)
+- `subjectBreakdown` — average score per subject (feeds the subject bar chart)
+
+**"Study Insights" panel** (bottom of the page) used to show three **hardcoded** sentences ("Strong in Algebra", "Needs focus on Trigonometry", "Improvement streak: 3 tests") regardless of who was logged in. This was replaced with `computeInsights()` (in `app/student/analytics/page.tsx`), which derives the same three kinds of cards from the real numbers above:
+
+1. **Strength card** — only shown when the student has submissions in more than one subject *and* `bestSubject` and `weakSubject` actually differ (a student with only one subject can't meaningfully be "strong" relative to themselves).
+2. **Weakness card** — same guard, shows how far `weakSubject`'s average sits below the student's overall average.
+3. **Streak or pace card** — walks `scoreHistory` backwards from the most recent test, counting a run of strictly increasing scores. If there's no active streak, it falls back to showing the student's real average time-per-test instead of forcing a fake streak.
+
+If a student has zero submissions, the panel shows "Not enough test data yet…" instead of any card — there's nothing true to say yet, so nothing is invented.
+
+> **Important:** because `getStudentAnalytics()` only includes submissions whose result has actually been declared (see [§14](#14-result-declaration--teacher-controlled-reveal-timing)), a pending result never leaks into these averages or the streak calculation before the teacher (or the timer) has revealed it.
+
 ### AI Test Generator (`/teacher/ai-generator`)
 
 The teacher configures a test (topic, subject, difficulty, question count, types, marks per question, grade level) and clicks **Generate Test**. The page calls `generateAITest()` in `lib/supabase-service.ts`, which invokes the `generate-test` Supabase Edge Function.
 
 **What the Edge Function does (`supabase/functions/generate-test/index.ts`):**
-1. Builds a structured prompt and sends it to **Claude (`claude-haiku-4-5`)** via the Anthropic API.
-2. Parses Claude's JSON array response — each element is a question with type, text, difficulty, options (MCQ/True-False), correct answer (text type), and explanation.
+1. Builds a structured prompt and sends it to **OpenRouter** (`https://openrouter.ai/api/v1/chat/completions`), currently configured to use the `google/gemini-2.5-flash` model. OpenRouter is a single API that can call many different AI providers/models — swapping models later just means changing the `model` string, not rewriting the integration.
+2. Parses the model's JSON array response — each element is a question with type, text, difficulty, options (MCQ/True-False), correct answer (text type), and explanation.
 3. Inserts the `tests` row using the **service-role client** (bypasses RLS — runs server-side).
 4. Inserts each `questions` row in order, then inserts `question_options` for MCQ/True-False.
 5. Returns a complete `MockTest` payload to the app for immediate preview.
@@ -705,7 +729,69 @@ When a teacher's invite email points to `/teacher/[teacherId]` as a landing page
 
 ---
 
-## 14. Testing — Load Testing & End-to-End (Playwright)
+## 14. Result Declaration — Teacher-Controlled Reveal Timing
+
+### The Problem
+
+Before this feature, a student's score became visible the instant it was computed — with two separate, inconsistent rules depending on which page you looked at:
+
+- `/student/analytics` showed the score as soon as a submission's status was `submitted` or `graded` — i.e. immediately after auto-grading, with zero delay and no teacher input.
+- `/student/tests` (Completed tab) only showed the score once a submission's status was exactly `graded`. But status only becomes `graded` when a teacher manually grades at least one written answer (`gradeTextAnswer()`). A test made entirely of MCQ/True-False questions is fully auto-graded on submit and **never** transitions to `graded` — so that page showed "Awaiting grade" forever for those tests, even though the score was already known.
+
+Neither behavior gave the teacher any say in *when* results become visible, which is what this feature adds.
+
+### The Rule
+
+A submission's result becomes visible to the student the moment **either** of these is true:
+
+1. **The teacher declares it manually** — a "Declare Now" button reveals it immediately, for every student on that test, right away.
+2. **The auto-reveal timer elapses** — `resultDelayMinutes` minutes have passed since *that student* submitted (default **2 minutes**, editable per test). This is a safety net: even if the teacher forgets, results are guaranteed to show up eventually.
+
+This logic lives in one small, pure function — `isResultVisible()` in `lib/supabase-service.ts`:
+
+```typescript
+export function isResultVisible(test, submission): boolean {
+  if (test.resultsDeclared) return true
+  if (!submission.submittedAt) return false
+  const revealAt = new Date(submission.submittedAt).getTime() + test.resultDelayMinutes * 60_000
+  return Date.now() >= revealAt
+}
+```
+
+**Why per-student timing instead of per-test-close timing?** Tests already have an optional `closes_at` ("closes at") field, which would seem like the natural anchor for a single, class-wide reveal moment. But `closes_at` is optional and nothing in the app currently enforces it — a test can run with no closing time set at all. Anchoring the guarantee to *"minutes after closes_at"* would silently never fire for any test where the teacher left that field blank. Anchoring it to *"minutes after this student's own submission"* instead means every submission always has a `submitted_at`, so the "results will definitely be declared eventually" guarantee always holds — no dependency on an optional field being set correctly.
+
+**Why this needs no cron job / scheduled task:** `isResultVisible()` is a plain timestamp comparison, evaluated fresh every time a page reads the data. There's no background process "flipping a switch" at the 2-minute mark — the visibility is simply *computed* correctly whenever it's asked for. This project has no cron/scheduled-function infrastructure at all, so avoiding the need for one kept this feature simple.
+
+### Schema
+
+Three columns were added to `tests` (see `supabase/schema.sql`; for a database created before this feature existed, run `supabase/migrations/add_result_declaration.sql` instead):
+
+| Column | Meaning |
+|---|---|
+| `result_delay_minutes` | Minutes after a student submits before their result auto-reveals. Defaults to `2`. |
+| `results_declared` | Teacher override flag. Once `true`, every submission on this test is visible regardless of the timer. |
+| `results_declared_at` | Timestamp of when the teacher declared results — shown to the teacher as a record, not used in any logic. |
+
+### Where It's Enforced
+
+- **`getStudentAnalytics()`** (`lib/supabase-service.ts`) filters out any submission that isn't yet visible *before* computing averages, streaks, or subject breakdowns — a pending score can never leak into a student's own stats early.
+- **`/student/tests`** (both the "Completed" tab and the "All" tab) computes `isResultVisible(test, submission)` per row and shows either the real score or "Result not yet declared" — replacing the old, inconsistent `status === "graded"` check. This also incidentally fixed the auto-graded-tests-never-show-a-result bug described above, since visibility no longer depends on the `graded` status at all.
+
+### Teacher Controls (`/teacher/checking` — Grading Center)
+
+The Grading Center already lets a teacher pick a test and review its submissions, so that's where the declare control lives — right below the page header, for whichever test is currently selected:
+
+- A status line: either *"Declared to students on [date/time]"*, or *"Auto-declares N minutes after each student submits, unless you declare it sooner."*
+- An editable **delay (minutes)** input — saved via `updateResultDelayMinutes(testId, minutes)` as soon as you click away from the field (`onBlur`). This works on a test that's already published, not just at creation time.
+- A **Declare Now** button — calls `declareResults(testId)`, which sets `results_declared = true` immediately, overriding the timer for the whole class in one click.
+
+Once a test's results are declared, the delay input and button disappear (there's nothing left to configure), leaving just the "Declared on…" message.
+
+The delay can also be set up front, in the **Create Test** wizard's first step (`/teacher/create-test`) — a "Declare results to students… minutes after each student submits" field, defaulting to `2`, right next to the existing "Opens at" / "Closes at" scheduling fields.
+
+---
+
+## 15. Testing — Load Testing & End-to-End (Playwright)
 
 Two different kinds of tests were built for this project, because they answer two different questions:
 
@@ -718,7 +804,7 @@ They're complementary. Neither replaces the other.
 
 ---
 
-### 14.1 The Load Test — "What happens with 50 students at once?"
+### 15.1 The Load Test — "What happens with 50 students at once?"
 
 **The worry:** `tests.attempt_count` and `tests.avg_score` are kept in sync by a database trigger (`sync_test_stats`, see [§6](#6-the-database)) that fires on every `submissions` insert/update. If 50 students submitted the same test in the same second, could that trigger lose updates, deadlock, or produce a wrong count? This is a **race condition** risk — a bug that only shows up under concurrency, never when testing alone.
 
@@ -732,13 +818,13 @@ They're complementary. Neither replaces the other.
 
 **Result:** 50/50 submissions succeeded in ~2.3 seconds, and `attempt_count` landed exactly on the expected number — the trigger correctly serializes concurrent writes to the same `tests` row instead of corrupting the count. `avg_score` stayed 0, which is *correct*, not a bug: the trigger only averages submissions with `status = 'graded'`, and auto-graded MCQ submissions sit at `status = 'submitted'` until a human (or future auto-grade step) marks them graded.
 
-**Why this approach and not real people:** A script is free, instant, and repeatable — you can fix a bug and re-run in seconds. Fifty real humans can't reliably click "submit" in the same millisecond, so they're weak at catching *this specific* class of bug (they're much better at catching confusing UI, which is a different problem). The rule of thumb: **simulate concurrency with scripts, validate the real experience with humans** — see 14.2.
+**Why this approach and not real people:** A script is free, instant, and repeatable — you can fix a bug and re-run in seconds. Fifty real humans can't reliably click "submit" in the same millisecond, so they're weak at catching *this specific* class of bug (they're much better at catching confusing UI, which is a different problem). The rule of thumb: **simulate concurrency with scripts, validate the real experience with humans** — see [§15.2](#152-end-to-end-testing--playwright).
 
 **Important limitation:** this only proves the *database and triggers* are safe. It runs through the service-role key, so it completely bypasses Row Level Security and the actual frontend. It says nothing about whether the login screen works, whether a button is broken, or whether RLS is misconfigured. That gap is exactly what E2E testing covers.
 
 ---
 
-### 14.2 End-to-End Testing — Playwright
+### 15.2 End-to-End Testing — Playwright
 
 **What E2E testing means:** instead of talking to the database directly, a real (headless) browser is launched, and it clicks through the actual app exactly like a user would — types into real form fields, clicks real buttons, waits for real page navigations. This is the only kind of test that exercises the *entire* stack at once: React components, the Zustand session store, Supabase Auth, RLS policies, and the database — all together.
 
@@ -797,7 +883,7 @@ While debugging, a genuine (minor) gap surfaced: a test that a student has **sta
 
 ---
 
-## 15. Glossary
+## 16. Glossary
 
 | Term | Meaning |
 |---|---|

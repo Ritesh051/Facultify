@@ -97,6 +97,9 @@ create table tests (
   duration_minutes  integer not null,
   scheduled_at      timestamptz,
   closes_at         timestamptz,
+  result_delay_minutes integer not null default 2,   -- minutes after a student submits before their result is auto-revealed
+  results_declared     boolean not null default false, -- teacher override: reveal immediately, regardless of the timer
+  results_declared_at  timestamptz,
   ai_generated      boolean not null default false,
   attempt_count     integer not null default 0,
   avg_score         numeric(5,2) not null default 0,
