@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
-import { Loader2, GraduationCap } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { Logo } from "@/components/shared/Logo";
 
 export default function ConfirmPage() {
   const router = useRouter();
@@ -66,9 +67,7 @@ export default function ConfirmPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-      <div className="h-10 w-10 rounded-lg bg-blue-600 flex items-center justify-center">
-        <GraduationCap className="h-5 w-5 text-white" />
-      </div>
+      <Logo size={40} />
       <div className="flex items-center gap-2 text-sm text-slate-500">
         <Loader2 className="h-4 w-4 animate-spin" />
         Setting up your account…

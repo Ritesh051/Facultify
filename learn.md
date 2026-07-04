@@ -21,7 +21,9 @@ A plain-language walkthrough of how this project is built, what every technology
 13. [Dashboards — What's Built](#13-dashboards--whats-built)
 14. [Result Declaration — Teacher-Controlled Reveal Timing](#14-result-declaration--teacher-controlled-reveal-timing)
 15. [Testing — Load Testing & End-to-End (Playwright)](#15-testing--load-testing--end-to-end-playwright)
-16. [Glossary](#16-glossary)
+16. [Reviewing a Submitted Test — Answer Review Mode](#16-reviewing-a-submitted-test--answer-review-mode)
+17. [Environment Variables & Invite Link Origin](#17-environment-variables--invite-link-origin)
+18. [Glossary](#18-glossary)
 
 ---
 
@@ -183,6 +185,7 @@ Facultify/
 │       └── add_result_declaration.sql
 │
 ├── middleware.ts                 ← Runs before EVERY request: checks auth cookie
+├── .env.local.example            ← Documents every env var needed; copy to .env.local and fill in
 └── .env.local                   ← Secret keys (never commit this file)
 ```
 
@@ -883,7 +886,57 @@ While debugging, a genuine (minor) gap surfaced: a test that a student has **sta
 
 ---
 
-## 16. Glossary
+## 16. Reviewing a Submitted Test — Answer Review Mode
+
+### The Problem
+
+Once a student finished a test, `/student/tests` could tell them *whether* their result was declared (see [§14](#14-result-declaration--teacher-controlled-reveal-timing)) and show the score — but there was no way to see *which* answers were right or wrong, what the correct option was, or any feedback a teacher left on a written answer. There was also nothing stopping a student from navigating back to `/student/test/[id]` after finishing and hitting "Submit" a second time.
+
+### View Results → Review Mode
+
+The "View Results" links on `/student/tests` (`app/student/tests/page.tsx`, both the "All" and "Completed" tabs) now point to `/student/test/[testId]?review=[submissionId]` instead of nowhere. The exam page (`app/student/test/[id]/page.tsx`) detects the `review` query param and, if present, renders a read-only results view instead of the live exam:
+
+- Fetches the specific submission with `getSubmission(submissionId)` (already existed in `lib/supabase-service.ts`, just not wired into the UI before).
+- Runs the same `isResultVisible(test, submission)` check used elsewhere ([§14](#14-result-declaration--teacher-controlled-reveal-timing)) — if the result isn't declared yet, shows a "Results not declared yet" screen instead of the answers, so a direct/guessed link can't leak an undeclared score.
+- If visible, shows: a `ScoreBadge` summary (score, status, time taken, submitted-at), then every question with the student's answer and the correct answer both visible — green border + checkmark on the correct option, red border + X on the student's pick if it was wrong (`ReviewOptionRow`). Written answers show the student's text plus any `teacherFeedback`.
+
+### Guarding Re-Entry Into a Finished Test
+
+Even without `?review=`, if a student navigates straight to `/student/test/[id]` for a test they already finished, the page now checks `submission.status` right after `startTest()` resolves and refuses to render the live exam UI for `submitted`/`graded` submissions (`isReviewMode` in the page). This closes the gap where a finished exam could otherwise be re-entered and re-submitted.
+
+As defense in depth, `submitTest()` in `lib/supabase-service.ts` also now re-checks `submissions.status` server-side before scoring and throws `"This test has already been submitted."` if it's already `submitted` or `graded` — so even a stale client (or a replayed request) can't score a test twice.
+
+### Why `useSearchParams` Needed a `Suspense` Wrapper
+
+Next.js requires any component that calls `useSearchParams()` to be wrapped in a `<Suspense>` boundary, or the production build fails ("`useSearchParams()` should be wrapped in a suspense boundary"). The page component was split into an outer `ActiveTestPage` (just renders `<Suspense><ActiveTestPageInner /></Suspense>` with a spinner fallback) and the actual logic moved into `ActiveTestPageInner`.
+
+---
+
+## 17. Environment Variables & Invite Link Origin
+
+### The Problem
+
+Invite emails (teacher and student) build their magic link using the request's `origin` header, falling back to `process.env.NEXT_PUBLIC_SUPABASE_URL` if the header was missing. In production this fallback is wrong — it would point the invite link at the *Supabase* project URL, not the app itself, silently producing a broken invite if a proxy/load balancer ever stripped the `Origin` header.
+
+### The Fix
+
+Both `app/api/invite/route.ts` and `app/api/invite-student/route.ts` now resolve the origin in this priority order:
+
+```
+process.env.NEXT_PUBLIC_APP_URL              -- canonical, explicit, always correct in prod
+  ?? request.headers.get("origin")           -- works for same-origin browser requests
+  ?? `${request.nextUrl.protocol}//${request.nextUrl.host}`  -- last-resort derived from the request itself
+```
+
+Nowhere in the chain does it fall back to the Supabase URL anymore. `NEXT_PUBLIC_APP_URL` is the new recommended way to pin the app's canonical URL regardless of headers.
+
+### `.env.local.example`
+
+A committed, secret-free template (`.env.local.example`) was added at the project root documenting every environment variable the app needs, grouped by concern: App (`NEXT_PUBLIC_APP_URL`), Supabase (URL/anon key/service-role key), Email/Resend (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`), a note that the AI generator's key is a Supabase Edge Function secret (not a Next.js env var — see [§13](#13-dashboards--whats-built)), and the Playwright e2e fixture vars (`E2E_TEACHER_EMAIL`, `E2E_STUDENT_EMAIL`, `E2E_PASSWORD`, see [§15.2](#152-end-to-end-testing--playwright)). New contributors copy it to `.env.local` and fill in the blanks instead of guessing which variables exist from reading the source.
+
+---
+
+## 18. Glossary
 
 | Term | Meaning |
 |---|---|

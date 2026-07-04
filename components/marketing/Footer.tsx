@@ -1,5 +1,6 @@
 import { Github, Twitter, Linkedin } from "lucide-react";
 import Link from "next/link";
+import { Logo } from "@/components/shared/Logo";
 
 export default function Footer() {
   return (
@@ -8,7 +9,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Column 1: Logo & Tagline */}
           <div className="space-y-4">
-            <div className="text-white text-xl font-bold">Facultify</div>
+            <Logo size={36} />
             <p className="text-sm leading-relaxed">
               Empowering educators with intelligent tools to streamline academic
               workflows and enhance student outcomes.

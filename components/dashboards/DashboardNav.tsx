@@ -1,7 +1,8 @@
 "use client";
 
-import { BookOpen, Bell, ChevronDown, LogOut, User } from "lucide-react";
+import { Bell, ChevronDown, LogOut, User } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { Logo } from "@/components/shared/Logo";
 import { useAppStore } from "@/store/app-store";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -55,8 +56,7 @@ export default function DashboardNav() {
     <header className="w-full h-16 bg-slate-900 text-white flex items-center justify-between px-6 shadow-md shrink-0">
       {/* Logo */}
       <div className="flex items-center gap-2">
-        <BookOpen className="h-6 w-6 text-blue-400" />
-        <span className="text-xl font-bold tracking-tight">Facultify</span>
+        <Logo size={32} />
       </div>
 
       {/* Right section */}

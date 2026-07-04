@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { GraduationCap, Loader2, Eye, EyeOff, Mail, KeyRound } from "lucide-react";
+import { Loader2, Eye, EyeOff, Mail, KeyRound } from "lucide-react";
 import { toast } from "sonner";
+import { Logo } from "@/components/shared/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -72,10 +73,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-slate-50 flex flex-col items-center justify-center p-4">
       {/* Logo */}
       <div className="flex items-center gap-2.5 mb-8">
-        <div className="h-9 w-9 rounded-lg bg-blue-600 flex items-center justify-center shadow-md">
-          <GraduationCap className="h-5 w-5 text-white" />
-        </div>
-        <span className="text-2xl font-bold text-slate-900 tracking-tight">Facultify</span>
+        <Logo size={40} />
       </div>
 
       <Card className="w-full max-w-md shadow-xl border-slate-200">

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { GraduationCap, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
+import { Logo } from "@/components/shared/Logo";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -64,13 +65,7 @@ export default function MarketingNav() {
           className="flex items-center gap-2 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded-md"
           aria-label="Facultify home"
         >
-          <GraduationCap
-            className="h-6 w-6 text-blue-600 group-hover:text-blue-700 transition-colors"
-            aria-hidden="true"
-          />
-          <span className="text-[1.125rem] font-bold tracking-tight text-slate-900 leading-none">
-            Facultify
-          </span>
+          <Logo size={32} />
         </Link>
 
         {/* Desktop nav links */}
@@ -132,13 +127,7 @@ export default function MarketingNav() {
                     className="flex items-center gap-2"
                     onClick={() => setMobileOpen(false)}
                   >
-                    <GraduationCap
-                      className="h-5 w-5 text-blue-600"
-                      aria-hidden="true"
-                    />
-                    <span className="text-base font-bold tracking-tight text-slate-900">
-                      Facultify
-                    </span>
+                    <Logo size={28} />
                   </Link>
                 </SheetTitle>
               </SheetHeader>
