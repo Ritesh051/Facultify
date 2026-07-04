@@ -97,10 +97,10 @@ export default function AboutPage() {
               finished.
             </p>
             <p>
-              We're a small, focused team, and we work directly with the institutions on the
+              {`We're a small, focused team, and we work directly with the institutions on the
               platform today to decide what gets built next. If you're currently running exams
               on paper or spreadsheets, we'd genuinely like to hear how — it usually becomes our
-              next feature.
+              next feature.`}
             </p>
           </div>
         </div>

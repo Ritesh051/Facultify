@@ -106,7 +106,8 @@ export default function ContactPage() {
                     Message sent
                   </h3>
                   <p className="text-sm" style={{ color: "#64748B" }}>
-                    Thanks, {name.split(" ")[0]} — we'll reply to {email} within a business day.
+                    Thanks, {name.split(" ")[0]} {"— we'll reply to "}
+                    {email} within a business day.
                   </p>
                 </div>
               ) : (

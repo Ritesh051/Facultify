@@ -71,7 +71,7 @@ export default function PressPage() {
                   Facultify logo (PNG)
                 </p>
                 <p className="text-sm" style={{ color: "#64748B" }}>
-                  For editorial use with attribution. Please don't alter the mark or colors.
+                  {"For editorial use with attribution. Please don't alter the mark or colors."}
                 </p>
               </div>
               <a

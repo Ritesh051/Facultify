@@ -75,7 +75,7 @@ export default function CareersPage() {
             Get on our radar
           </h2>
           <p className="text-sm leading-relaxed mb-2" style={{ color: "#64748B" }}>
-            Send a short note about what you're good at and what you'd want to work on to{" "}
+            {"Send a short note about what you're good at and what you'd want to work on to "}
             <a href="mailto:careers@facultify.com" className="text-blue-600 hover:underline">
               careers@facultify.com
             </a>

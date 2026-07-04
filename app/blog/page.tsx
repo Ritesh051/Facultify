@@ -71,7 +71,7 @@ export default function BlogPage() {
               <a href="mailto:support@facultify.com" className="text-blue-600 hover:underline">
                 support@facultify.com
               </a>{" "}
-              and we'll let you know when the first post is live.
+              {"and we'll let you know when the first post is live."}
             </p>
           </div>
         </div>

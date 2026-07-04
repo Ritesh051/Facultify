@@ -7,9 +7,9 @@ const SECTIONS = [
     title: "1. Acceptance of terms",
     body: (
       <p>
-        By creating an account or using Facultify, you agree to these Terms of Service. If you're
+        {`By creating an account or using Facultify, you agree to these Terms of Service. If you're
         signing up on behalf of an institution, you're confirming you have the authority to bind
-        that institution to these terms.
+        that institution to these terms.`}
       </p>
     ),
   },
@@ -27,10 +27,10 @@ const SECTIONS = [
     title: "3. Accounts and roles",
     body: (
       <p>
-        Admin accounts are created directly at signup and own the institution's subscription.
+        {`Admin accounts are created directly at signup and own the institution's subscription.
         Teacher and student accounts are created via email invitation from an admin or teacher.
         Each account is for one individual and may not be shared. You're responsible for keeping
-        your login credentials secure.
+        your login credentials secure.`}
       </p>
     ),
   },
@@ -72,9 +72,9 @@ const SECTIONS = [
     title: "7. Intellectual property",
     body: (
       <p>
-        The Facultify name, logo, and underlying software are our property. Nothing in these terms
+        {`The Facultify name, logo, and underlying software are our property. Nothing in these terms
         grants you rights to our trademarks or source code beyond what's needed to use the service
-        as intended.
+        as intended.`}
       </p>
     ),
   },
@@ -82,9 +82,9 @@ const SECTIONS = [
     title: "8. Termination",
     body: (
       <p>
-        We may suspend or terminate accounts that violate these terms, pose a security risk, or
+        {`We may suspend or terminate accounts that violate these terms, pose a security risk, or
         remain unpaid after a reasonable notice period. You may close your institution's account
-        at any time; we will delete or anonymize associated data per our Privacy Policy.
+        at any time; we will delete or anonymize associated data per our Privacy Policy.`}
       </p>
     ),
   },
@@ -92,10 +92,10 @@ const SECTIONS = [
     title: "9. Disclaimers & limitation of liability",
     body: (
       <p>
-        Facultify is provided "as is." We work to keep the service reliable and accurate, but we
+        {`Facultify is provided "as is." We work to keep the service reliable and accurate, but we
         don't guarantee it will be uninterrupted or error-free. To the extent permitted by law, our
         liability for any claim relating to the service is limited to the amount paid for the
-        service in the twelve months preceding the claim.
+        service in the twelve months preceding the claim.`}
       </p>
     ),
   },
@@ -103,8 +103,8 @@ const SECTIONS = [
     title: "10. Changes to these terms",
     body: (
       <p>
-        We may update these terms as the product evolves. We'll post the updated version here with
-        a new effective date; continued use of the service after a change constitutes acceptance.
+        {`We may update these terms as the product evolves. We'll post the updated version here with
+        a new effective date; continued use of the service after a change constitutes acceptance.`}
       </p>
     ),
   },

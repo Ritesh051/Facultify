@@ -69,12 +69,12 @@ export default function DocsPage() {
                   Every institution starts with an <strong>admin account</strong>. Sign up at{" "}
                   <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-sm">/auth/signup</code>,
                   confirm your email, then complete the four-step onboarding wizard — institution
-                  name, plan, and a few basics. That's it: your dashboard is ready.
+                  {" "}name, plan, and a few basics. {"That's it: your dashboard is ready."}
                 </p>
                 <p>
-                  From there, an admin invites teachers by email, and teachers invite students into
+                  {`From there, an admin invites teachers by email, and teachers invite students into
                   batches. Everyone else on your team never needs to "sign up" — they just accept
-                  the invite email and set a password.
+                  the invite email and set a password.`}
                 </p>
               </DocSection>
 
@@ -108,18 +108,18 @@ export default function DocsPage() {
 
               <DocSection id="ai-generator" title="AI Test Generator">
                 <p>
-                  From a teacher's dashboard, open the AI Generator, describe the topic, subject,
+                  {`From a teacher's dashboard, open the AI Generator, describe the topic, subject,
                   difficulty, question count, and types you want. Facultify drafts a complete test
                   — questions, options, and explanations — in seconds. Review it, edit anything
                   that needs a human touch, and publish when it's ready. Nothing goes to students
-                  without your review.
+                  without your review.`}
                 </p>
               </DocSection>
 
               <DocSection id="faq" title="Frequently asked questions">
                 <div>
                   <p className="font-semibold" style={{ color: "#0F172A" }}>
-                    Can students on the same test see each other's answers?
+                    {"Can students on the same test see each other's answers?"}
                   </p>
                   <p>No — every submission is isolated to the student who made it.</p>
                 </div>
@@ -129,12 +129,12 @@ export default function DocsPage() {
                   </p>
                   <p>
                     MCQ and True/False answers are graded the instant a student submits. Written
-                    answers wait for a teacher's review.
+                    {"answers wait for a teacher's review."}
                   </p>
                 </div>
                 <div>
                   <p className="font-semibold" style={{ color: "#0F172A" }}>
-                    Can one institution see another institution's data?
+                    {"Can one institution see another institution's data?"}
                   </p>
                   <p>
                     No. Data is isolated per institution at the database level — this is enforced

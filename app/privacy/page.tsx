@@ -29,11 +29,11 @@ const SECTIONS = [
     title: "2. How we use information",
     body: (
       <p>
-        We use collected information to operate the platform: authenticating accounts, isolating
+        {`We use collected information to operate the platform: authenticating accounts, isolating
         each institution's data from every other institution, auto-grading submissions, generating
         analytics, sending transactional emails (invites, confirmations), and improving product
         reliability. We do not sell personal information, and we do not use one institution's data
-        to benefit another.
+        to benefit another.`}
       </p>
     ),
   },
@@ -41,10 +41,10 @@ const SECTIONS = [
     title: "3. Data isolation between institutions",
     body: (
       <p>
-        Facultify is multi-tenant software: many institutions share the same infrastructure, but
+        {`Facultify is multi-tenant software: many institutions share the same infrastructure, but
         data is isolated at the database level using row-level security. A teacher or admin at one
         institution cannot query or view another institution's students, tests, or results — this
-        is enforced by the database itself, not just the application layer.
+        is enforced by the database itself, not just the application layer.`}
       </p>
     ),
   },
@@ -77,9 +77,9 @@ const SECTIONS = [
     title: "5. Data retention",
     body: (
       <p>
-        We retain institution data for as long as an institution's account remains active. If an
+        {`We retain institution data for as long as an institution's account remains active. If an
         institution closes its account, we delete or anonymize associated data within a reasonable
-        period, except where retention is required to comply with legal obligations.
+        period, except where retention is required to comply with legal obligations.`}
       </p>
     ),
   },
@@ -87,11 +87,11 @@ const SECTIONS = [
     title: "6. Students and minors",
     body: (
       <p>
-        Facultify is provided to educational institutions, which act as the data controller for
+        {`Facultify is provided to educational institutions, which act as the data controller for
         their students, including any students under 18. Institutions are responsible for
         obtaining any consent required under applicable education-privacy laws (such as FERPA)
         before adding student accounts. We process student data solely on the institution's
-        instructions and for the purpose of delivering the assessment platform.
+        instructions and for the purpose of delivering the assessment platform.`}
       </p>
     ),
   },
@@ -110,9 +110,9 @@ const SECTIONS = [
     body: (
       <p>
         Depending on your role and jurisdiction, you may have the right to access, correct, or
-        request deletion of your personal information. Students and teachers should generally
-        contact their institution's admin first, since institutions control their own account
-        data; admins can reach us directly at{" "}
+        {"request deletion of your personal information. Students and teachers should generally"}
+        {" contact their institution's admin first, since institutions control their own account"}
+        {" data; admins can reach us directly at "}
         <a href="mailto:privacy@facultify.com" className="text-blue-600 hover:underline">
           privacy@facultify.com
         </a>
