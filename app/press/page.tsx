@@ -7,9 +7,7 @@ import { Logo } from "@/components/shared/Logo";
 const FACTS = [
   { label: "Founded", value: "2025" },
   { label: "Category", value: "EdTech / Assessment Software" },
-  { label: "Institutions", value: "119+" },
-  { label: "Students served", value: "11,999+" },
-  { label: "Tests graded", value: "239,999+" },
+  { label: "Headquarters", value: "Remote-first" },
 ];
 
 export default function PressPage() {

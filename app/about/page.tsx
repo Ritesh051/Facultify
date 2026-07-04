@@ -5,12 +5,6 @@ import Footer from "@/components/marketing/Footer";
 import { PageHero } from "@/components/marketing/PageHero";
 import { Button } from "@/components/ui/button";
 
-const STATS = [
-  { value: "119+", label: "Institutions" },
-  { value: "11,999+", label: "Students" },
-  { value: "239,999+", label: "Tests Graded" },
-];
-
 const VALUES = [
   {
     icon: Target,
@@ -102,27 +96,6 @@ export default function AboutPage() {
               on paper or spreadsheets, we'd genuinely like to hear how — it usually becomes our
               next feature.`}
             </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Stats */}
-      <section className="py-16" style={{ background: "#F8FAFF" }}>
-        <div className="mx-auto w-full max-w-4xl px-6 lg:px-12">
-          <div className="grid grid-cols-3 gap-8 text-center">
-            {STATS.map((stat) => (
-              <div key={stat.label}>
-                <div
-                  className="text-3xl sm:text-4xl font-black tracking-[-0.02em]"
-                  style={{ color: "#0F172A" }}
-                >
-                  {stat.value}
-                </div>
-                <div className="mt-1 text-sm" style={{ color: "#64748B" }}>
-                  {stat.label}
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </section>

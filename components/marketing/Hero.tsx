@@ -189,54 +189,6 @@ function GradingDemo() {
 }
 
 // ---------------------------------------------------------------------------
-// Stat counter — ticks up on first mount
-// ---------------------------------------------------------------------------
-
-function StatCounter({ end, suffix, label }: { end: number; suffix: string; label: string }) {
-  const [val, setVal] = useState(0);
-  const ref = useRef<HTMLDivElement>(null);
-  const started = useRef(false);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !started.current) {
-          started.current = true;
-          let start = 0;
-          const duration = 1400;
-          const step = 16;
-          const increment = end / (duration / step);
-          const timer = setInterval(() => {
-            start += increment;
-            if (start >= end) {
-              setVal(end);
-              clearInterval(timer);
-            } else {
-              setVal(Math.floor(start));
-            }
-          }, step);
-        }
-      },
-      { threshold: 0.3 }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [end]);
-
-  return (
-    <div ref={ref} className="flex flex-col items-start gap-0.5">
-      <p
-        className="text-3xl font-black tabular-nums leading-none"
-        style={{ color: "#0F172A" }}
-      >
-        {val.toLocaleString()}{suffix}
-      </p>
-      <p className="text-sm text-slate-500 font-medium leading-tight">{label}</p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Hero
 // ---------------------------------------------------------------------------
 
@@ -335,40 +287,12 @@ export default function Hero() {
                 Start Free Trial
                 <ArrowRight className="w-4 h-4" aria-hidden="true" />
               </Link>
-
-              <button
-                className="inline-flex items-center gap-2.5 rounded-xl border px-8 py-4 text-base font-semibold transition-all duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                style={{
-                  borderColor: "#CBD5E1",
-                  color: "#334155",
-                }}
-                aria-label="Watch product demo video"
-              >
-                <span
-                  className="flex items-center justify-center w-7 h-7 rounded-full"
-                  style={{ background: "linear-gradient(135deg, #3B6FFF, #7C3AED)" }}
-                  aria-hidden="true"
-                >
-                  <Play className="w-3 h-3 text-white fill-white" />
-                </span>
-                Watch Demo
-              </button>
             </div>
 
             {/* Trust note */}
             <p className="text-xs text-slate-400 font-medium -mt-2">
               No credit card required &middot; Setup in under 5 minutes
             </p>
-
-            {/* Divider */}
-            <div className="h-px w-full max-w-sm" style={{ background: "linear-gradient(90deg, #E2E8F0, transparent)" }} aria-hidden="true" />
-
-            {/* Stats row */}
-            <div className="flex flex-wrap gap-10">
-              <StatCounter end={500} suffix="+" label="Institutions" />
-              <StatCounter end={50000} suffix="+" label="Students" />
-              <StatCounter end={1000000} suffix="+" label="Tests Graded" />
-            </div>
           </div>
 
           {/* ── Right: animated grading demo ── */}
