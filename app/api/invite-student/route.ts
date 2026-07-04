@@ -45,11 +45,9 @@ export async function POST(request: NextRequest) {
   }
 
   const adminClient = createAdminClient();
-  // Use the app's own origin — never fall back to the Supabase project URL
-  const origin =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    request.headers.get("origin") ??
-    `${request.nextUrl.protocol}//${request.nextUrl.host}`;
+  // Always the canonical production URL — never the request's origin/host,
+  // which can reflect a proxy or preview domain instead of facultify.in
+  const origin = process.env.NEXT_PUBLIC_APP_URL!;
 
   // Generate an invite magic link (does NOT send Supabase's default email)
   const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({

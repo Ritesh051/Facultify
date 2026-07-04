@@ -49,11 +49,9 @@ export async function POST(request: NextRequest) {
   }
 
   const adminClient = createAdminClient();
-  // Use the app's own origin — never fall back to the Supabase project URL
-  const origin =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    request.headers.get("origin") ??
-    `${request.nextUrl.protocol}//${request.nextUrl.host}`;
+  // Always the canonical production URL — never the request's origin/host,
+  // which can reflect a proxy or preview domain instead of facultify.in
+  const origin = process.env.NEXT_PUBLIC_APP_URL!;
 
   // Dedicated invite-acceptance page for this specific teacher.
   // Using /invite/teacher/[id] instead of /auth/confirm avoids the teacher
