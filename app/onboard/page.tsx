@@ -7,9 +7,7 @@ import {
   Check,
   Building2,
   User,
-  CreditCard,
   ClipboardList,
-  CheckCircle2,
   Loader2,
   ArrowLeft,
 } from "lucide-react";
@@ -24,20 +22,17 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { SUBSCRIPTION_PLANS } from "@/lib/mock-data";
 import { onboardInstitution } from "@/lib/supabase-service";
 import { useAppStore } from "@/store/app-store";
-import type { OnboardFormData, SubscriptionTier } from "@/lib/types";
+import type { OnboardFormData } from "@/lib/types";
 
 // ─── Step metadata ────────────────────────────────────────────────────────────
 
 const STEPS = [
   { id: 1, label: "Institution", icon: Building2 },
   { id: 2, label: "Admin Profile", icon: User },
-  { id: 3, label: "Choose Plan", icon: CreditCard },
-  { id: 4, label: "Confirm", icon: ClipboardList },
+  { id: 3, label: "Confirm", icon: ClipboardList },
 ] as const;
 
 // ─── Default form state ───────────────────────────────────────────────────────
@@ -48,7 +43,6 @@ const DEFAULT_FORM: OnboardFormData = {
   adminEmail: "",
   adminName: "",
   phoneNumber: "",
-  subscriptionTier: "growth",
   address: "",
   city: "",
   country: "India",
@@ -246,85 +240,15 @@ export default function OnboardPage() {
           </>
         )}
 
-        {/* ── Step 3: Choose Plan ── */}
+        {/* ── Step 3: Confirm & Submit ── */}
         {step === 3 && (
-          <>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Choose your plan</CardTitle>
-              <CardDescription>
-                Select the plan that best fits your institution. You can upgrade
-                or downgrade at any time.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {SUBSCRIPTION_PLANS.map((plan) => {
-                  const isSelected = form.subscriptionTier === plan.tier;
-                  return (
-                    <button
-                      key={plan.tier}
-                      type="button"
-                      onClick={() =>
-                        update("subscriptionTier", plan.tier as SubscriptionTier)
-                      }
-                      className={cn(
-                        "relative p-5 rounded-xl border-2 text-left transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
-                        isSelected
-                          ? "border-blue-600 bg-blue-50 shadow-sm"
-                          : "border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm"
-                      )}
-                    >
-                      {/* Selected checkmark */}
-                      {isSelected && (
-                        <div className="absolute top-3 right-3 h-5 w-5 rounded-full bg-blue-600 flex items-center justify-center">
-                          <Check className="h-3 w-3 text-white" />
-                        </div>
-                      )}
-
-                      {/* Popular badge */}
-                      {plan.tier === "growth" && (
-                        <Badge className="mb-2 bg-blue-100 text-blue-700 hover:bg-blue-100 text-xs font-semibold">
-                          Popular
-                        </Badge>
-                      )}
-                      {plan.tier !== "growth" && <div className="mb-2 h-5" />}
-
-                      <p className="font-bold text-slate-900 text-base">
-                        {plan.name}
-                      </p>
-                      <p className="text-2xl font-extrabold text-blue-600 mt-1">
-                        ${plan.priceMonthly}
-                        <span className="text-sm font-normal text-slate-400">
-                          /mo
-                        </span>
-                      </p>
-
-                      <ul className="mt-3 space-y-1.5">
-                        {plan.features.slice(0, 4).map((feature) => (
-                          <li
-                            key={feature}
-                            className="flex items-start gap-1.5 text-xs text-slate-600"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0 mt-0.5" />
-                            {feature}
-                          </li>
-                        ))}
-                      </ul>
-                    </button>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </>
-        )}
-
-        {/* ── Step 4: Confirm & Submit ── */}
-        {step === 4 && (
           <>
             <CardHeader className="pb-4">
               <CardTitle className="text-xl">Review & Confirm</CardTitle>
               <CardDescription>
                 Please review your details before creating the institution.
+                You&apos;ll start on the Free plan (1 teacher, 20 students) and
+                can upgrade any time from Billing.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -336,12 +260,6 @@ export default function OnboardPage() {
                     ["Admin Email", form.adminEmail || "—"],
                     ["Admin Name", form.adminName || "—"],
                     ["Phone Number", form.phoneNumber || "—"],
-                    [
-                      "Subscription Plan",
-                      SUBSCRIPTION_PLANS.find(
-                        (p) => p.tier === form.subscriptionTier
-                      )?.name ?? form.subscriptionTier,
-                    ],
                   ] as [string, string][]
                 ).map(([label, value]) => (
                   <div

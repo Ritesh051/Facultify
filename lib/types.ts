@@ -2,7 +2,9 @@
 
 export type UserRole = "admin" | "teacher" | "student";
 
-export type SubscriptionTier = "starter" | "growth" | "enterprise";
+export type SubscriptionTier = "free" | "starter" | "institution" | "campus";
+
+export type BillingStatus = "free" | "active" | "past_due" | "canceled";
 
 export type QuestionType = "mcq" | "text" | "true_false";
 
@@ -25,6 +27,8 @@ export interface Institution {
   maxStudents: number;
   createdAt: string;
   isActive: boolean;
+  billingStatus: BillingStatus;
+  currentPeriodEnd?: string;
 }
 
 export interface SubscriptionPlan {
@@ -236,7 +240,6 @@ export interface OnboardFormData {
   domain: string;
   adminEmail: string;
   adminName: string;
-  subscriptionTier: SubscriptionTier;
   phoneNumber: string;
   address: string;
   city: string;

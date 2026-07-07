@@ -3,7 +3,7 @@
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
 
-export type SubscriptionTier = 'starter' | 'growth' | 'enterprise'
+export type SubscriptionTier = 'free' | 'starter' | 'institution' | 'campus'
 export type UserRole          = 'admin' | 'teacher' | 'student'
 export type QuestionType      = 'mcq' | 'text' | 'true_false'
 export type DifficultyLevel   = 'easy' | 'medium' | 'hard'
@@ -17,6 +17,8 @@ export interface InstitutionRow {
   id: string; name: string; domain: string; admin_email: string; logo_url: string | null
   subscription_tier: SubscriptionTier; max_teachers: number; max_students: number
   ai_generations_used: number; ai_generations_limit: number; is_active: boolean
+  billing_status: string; dodo_customer_id: string | null; dodo_subscription_id: string | null
+  current_period_end: string | null
   created_at: string; updated_at: string
 }
 export interface ProfileRow {
@@ -70,6 +72,8 @@ export interface InstitutionInsert {
   id?: string; name: string; domain: string; admin_email: string; logo_url?: string | null
   subscription_tier: SubscriptionTier; max_teachers: number; max_students: number
   ai_generations_used?: number; ai_generations_limit?: number; is_active?: boolean
+  billing_status?: string; dodo_customer_id?: string | null; dodo_subscription_id?: string | null
+  current_period_end?: string | null
   created_at?: string; updated_at?: string
 }
 export interface ProfileInsert {

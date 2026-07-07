@@ -24,6 +24,8 @@ function toInstitution(r: Record<string, unknown>): Institution {
     maxStudents:      r.max_students as number,
     createdAt:        r.created_at as string,
     isActive:         r.is_active as boolean,
+    billingStatus:    (r.billing_status as Institution["billingStatus"]) ?? "free",
+    currentPeriodEnd: (r.current_period_end as string) ?? undefined,
   };
 }
 

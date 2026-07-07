@@ -23,8 +23,12 @@ export function formatDateTime(iso: string): string {
   });
 }
 
-export function formatCurrency(amount: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+export function formatCurrency(amount: number, currency = "INR"): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 export function getInitials(name: string): string {

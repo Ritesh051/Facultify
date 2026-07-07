@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Users,
@@ -126,8 +127,21 @@ function CapacityPill({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+function showUpgradeToast(router: ReturnType<typeof useRouter>, maxTeachers: number) {
+  toast.error(
+    `Your plan allows a maximum of ${maxTeachers} teacher${maxTeachers === 1 ? "" : "s"}.`,
+    {
+      action: {
+        label: "Upgrade Plan",
+        onClick: () => router.push("/admin/billing"),
+      },
+    }
+  );
+}
+
 export default function TeachersPage() {
   const { activeSession } = useAppStore();
+  const router = useRouter();
 
   const institutionId =
     activeSession?.role === "admin" ? activeSession.user.id : "";
@@ -172,9 +186,7 @@ export default function TeachersPage() {
       return;
     }
     if (teachers.length >= maxTeachers) {
-      toast.error(
-        `Your plan allows a maximum of ${maxTeachers} teachers. Upgrade to add more.`
-      );
+      showUpgradeToast(router, maxTeachers);
       return;
     }
     setSubmitting(true);
@@ -217,8 +229,12 @@ export default function TeachersPage() {
       setInviteOpen(false);
       setForm({ name: "", email: "", subject: "" });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
-      toast.error(msg);
+      if (err instanceof Error && err.message === "LIMIT_TEACHERS_EXCEEDED") {
+        showUpgradeToast(router, maxTeachers);
+      } else {
+        const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+        toast.error(msg);
+      }
     } finally {
       setSubmitting(false);
     }

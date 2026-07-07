@@ -94,7 +94,7 @@ function UsageMeter({ label, icon: Icon, used, max, unit = "" }: UsageMeterProps
             isHigh ? "text-red-600" : isMid ? "text-amber-600" : "text-slate-700"
           )}
         >
-          {used}{unit} <span className="text-muted-foreground font-normal">/ {max === 999 || max === 9999 ? "∞" : `${max}${unit}`}</span>
+          {used}{unit} <span className="text-muted-foreground font-normal">/ {max >= 99999 ? "∞" : `${max}${unit}`}</span>
         </span>
       </div>
       <Progress
@@ -117,6 +117,8 @@ function UsageMeter({ label, icon: Icon, used, max, unit = "" }: UsageMeterProps
 interface PlanCardProps {
   plan: SubscriptionPlan;
   isCurrent: boolean;
+  annual: boolean;
+  disabled: boolean;
   onSelect: (plan: SubscriptionPlan) => void;
 }
 
@@ -126,20 +128,21 @@ const PLAN_ACCENTS: Record<string, { border: string; badge: string; btn: string 
     badge: "bg-slate-100 text-slate-600",
     btn: "variant-outline",
   },
-  growth: {
+  institution: {
     border: "border-blue-400 shadow-md shadow-blue-100",
     badge: "bg-blue-600 text-white",
     btn: "variant-default",
   },
-  enterprise: {
+  campus: {
     border: "border-violet-300 hover:border-violet-400",
     badge: "bg-violet-100 text-violet-700",
     btn: "variant-outline",
   },
 };
 
-function PlanCard({ plan, isCurrent, onSelect }: PlanCardProps) {
+function PlanCard({ plan, isCurrent, annual, disabled, onSelect }: PlanCardProps) {
   const accent = PLAN_ACCENTS[plan.tier] ?? PLAN_ACCENTS.starter;
+  const displayPrice = annual ? Math.round(plan.priceAnnual / 12) : plan.priceMonthly;
 
   return (
     <div
@@ -149,7 +152,7 @@ function PlanCard({ plan, isCurrent, onSelect }: PlanCardProps) {
         isCurrent && "bg-blue-50/40"
       )}
     >
-      {plan.tier === "growth" && (
+      {plan.tier === "institution" && (
         <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full">
           Most popular
         </span>
@@ -169,7 +172,7 @@ function PlanCard({ plan, isCurrent, onSelect }: PlanCardProps) {
         </div>
         <div className="text-right">
           <span className="text-2xl font-extrabold text-slate-900">
-            {formatCurrency(plan.priceMonthly, "USD")}
+            {formatCurrency(displayPrice)}
           </span>
           <span className="text-xs text-muted-foreground">/mo</span>
         </div>
@@ -186,9 +189,9 @@ function PlanCard({ plan, isCurrent, onSelect }: PlanCardProps) {
 
       <Button
         className="w-full"
-        variant={plan.tier === "growth" ? "default" : "outline"}
+        variant={plan.tier === "institution" ? "default" : "outline"}
         size="sm"
-        disabled={isCurrent}
+        disabled={isCurrent || disabled}
         onClick={() => onSelect(plan)}
       >
         {isCurrent ? "Current plan" : `Switch to ${plan.name}`}
@@ -205,18 +208,24 @@ export default function BillingPage() {
   const institutionId =
     activeSession?.role === "admin" ? activeSession.user.id : "";
   const currentPlanTier =
-    activeSession?.role === "admin"
-      ? activeSession.user.subscriptionTier
-      : "growth";
+    activeSession?.role === "admin" ? activeSession.user.subscriptionTier : "free";
   const maxTeachers =
-    activeSession?.role === "admin" ? activeSession.user.maxTeachers : 25;
+    activeSession?.role === "admin" ? activeSession.user.maxTeachers : 1;
   const maxStudents =
-    activeSession?.role === "admin" ? activeSession.user.maxStudents : 500;
+    activeSession?.role === "admin" ? activeSession.user.maxStudents : 20;
+  const billingStatus =
+    activeSession?.role === "admin" ? activeSession.user.billingStatus : "free";
+  const currentPeriodEnd =
+    activeSession?.role === "admin" ? activeSession.user.currentPeriodEnd : undefined;
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [teacherCount, setTeacherCount] = useState(0);
   const [studentCount, setStudentCount] = useState(0);
+  const [aiUsage, setAiUsage] = useState({ used: 0, limit: 10 });
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [managingBilling, setManagingBilling] = useState(false);
 
   useEffect(() => {
     if (!institutionId) return;
@@ -227,22 +236,61 @@ export default function BillingPage() {
       setInvoices(inv);
       setTeacherCount(analytics.activeTeachers);
       setStudentCount(analytics.totalStudents);
+      setAiUsage({ used: analytics.aiGenerationsUsed, limit: analytics.aiGenerationsLimit });
     });
   }, [institutionId]);
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("checkout") === "success") {
+      toast.success("Payment received — your plan will update shortly.");
+      window.history.replaceState(null, "", "/admin/billing");
+    }
+  }, []);
+
   const plan = SUBSCRIPTION_PLANS.find((p) => p.tier === currentPlanTier);
+  const isFree = currentPlanTier === "free";
 
-  const renewalDate = "01 Aug 2026";
+  const renewalDate = currentPeriodEnd ? formatDate(currentPeriodEnd) : null;
 
-  function handleSelectPlan(selected: SubscriptionPlan) {
+  async function handleSelectPlan(selected: SubscriptionPlan) {
     if (selected.tier === currentPlanTier) return;
-    const action =
-      SUBSCRIPTION_PLANS.indexOf(selected) >
-      SUBSCRIPTION_PLANS.findIndex((p) => p.tier === currentPlanTier)
-        ? "Upgraded"
-        : "Downgraded";
-    toast.success(`${action} to ${selected.name} plan.`);
-    setUpgradeOpen(false);
+    setCheckingOut(true);
+    try {
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          institutionId,
+          tier: selected.tier,
+          billingCycle,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not start checkout.");
+      window.location.href = data.url;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not start checkout.");
+      setCheckingOut(false);
+    }
+  }
+
+  async function handleManageBilling() {
+    setManagingBilling(true);
+    try {
+      const res = await fetch("/api/billing/portal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ institutionId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not open billing portal.");
+      window.location.href = data.url;
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Could not open billing portal."
+      );
+      setManagingBilling(false);
+    }
   }
 
   return (
@@ -270,23 +318,40 @@ export default function BillingPage() {
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <CardTitle className="text-lg">
-                    {plan?.name ?? "Growth"} Plan
+                    {plan?.name ?? "Free"} Plan
                   </CardTitle>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
+                      billingStatus === "active"
+                        ? "bg-blue-100 text-blue-700"
+                        : billingStatus === "past_due"
+                        ? "bg-amber-100 text-amber-700"
+                        : billingStatus === "canceled"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-slate-100 text-slate-600"
+                    )}
+                  >
                     <ShieldCheck className="h-2.5 w-2.5" />
-                    Active
+                    {billingStatus === "active"
+                      ? "Active"
+                      : billingStatus === "past_due"
+                      ? "Payment failed"
+                      : billingStatus === "canceled"
+                      ? "Canceled"
+                      : "Free"}
                   </span>
                 </div>
                 <CardDescription className="flex items-center gap-1.5">
                   <CalendarDays className="h-3.5 w-3.5" />
-                  Renews on {renewalDate}
+                  {renewalDate ? `Renews on ${renewalDate}` : "No active billing cycle"}
                 </CardDescription>
               </div>
               <div className="text-right">
                 <p className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                  {formatCurrency(plan?.priceMonthly ?? 79, "USD")}
+                  {isFree ? "Free" : formatCurrency(plan?.priceMonthly ?? 0)}
                 </p>
-                <p className="text-xs text-muted-foreground">per month</p>
+                {!isFree && <p className="text-xs text-muted-foreground">per month</p>}
               </div>
             </div>
           </CardHeader>
@@ -307,23 +372,31 @@ export default function BillingPage() {
             <UsageMeter
               label="AI Generations"
               icon={Sparkles}
-              used={34}
-              max={plan?.aiGenerationCredits ?? 100}
+              used={aiUsage.used}
+              max={aiUsage.limit}
             />
+
+            {isFree && (
+              <p className="text-xs text-muted-foreground rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
+                You&apos;re on the Free plan — 1 teacher, 20 students. Upgrade
+                to add more faculty and students.
+              </p>
+            )}
 
             <div className="flex items-center gap-3 pt-2">
               <Button onClick={() => setUpgradeOpen(true)}>
                 <Zap className="h-4 w-4 mr-2" />
                 Upgrade Plan
               </Button>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  toast.info("Contact support to downgrade your plan.")
-                }
-              >
-                Manage Plan
-              </Button>
+              {!isFree && (
+                <Button
+                  variant="outline"
+                  onClick={handleManageBilling}
+                  disabled={managingBilling}
+                >
+                  {managingBilling ? "Opening…" : "Manage Plan"}
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -332,35 +405,42 @@ export default function BillingPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Payment Method</CardTitle>
-            <CardDescription>Used for all future billing cycles</CardDescription>
+            <CardDescription>Managed securely by Dodo Payments</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-3 rounded-xl border bg-slate-50 px-4 py-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white flex-shrink-0">
-                <CreditCard className="h-5 w-5" />
+            {isFree ? (
+              <p className="text-sm text-muted-foreground rounded-xl border bg-slate-50 px-4 py-3">
+                No payment method on file yet — one will be collected when you
+                upgrade to a paid plan.
+              </p>
+            ) : (
+              <div className="flex items-center gap-3 rounded-xl border bg-slate-50 px-4 py-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white flex-shrink-0">
+                  <CreditCard className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    Managed via Dodo Payments
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Update your card or cancel anytime
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-800">
-                  **** **** **** 4242
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Visa · Expires 12/26
-                </p>
-              </div>
-            </div>
+            )}
 
             <Button
               variant="outline"
               className="w-full"
-              onClick={() =>
-                toast.info("Payment method update coming soon.")
-              }
+              disabled={isFree || managingBilling}
+              onClick={handleManageBilling}
             >
-              Update Payment Method
+              {managingBilling ? "Opening…" : "Update Payment Method"}
             </Button>
 
             <p className="text-center text-xs text-muted-foreground">
-              Secured by Stripe · Next charge {renewalDate}
+              Secured by Dodo Payments
+              {renewalDate ? ` · Next charge ${renewalDate}` : ""}
             </p>
           </CardContent>
         </Card>
@@ -456,10 +536,33 @@ export default function BillingPage() {
           <DialogHeader>
             <DialogTitle>Choose a Plan</DialogTitle>
             <DialogDescription>
-              Pick the plan that fits your institution. Changes take effect at
-              the next billing cycle.
+              Pick the plan that fits your institution. You&apos;ll be
+              redirected to Dodo Payments to complete checkout.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => setBillingCycle("monthly")}
+              className={cn(
+                "text-sm font-semibold px-3 py-1 rounded-full transition-colors",
+                billingCycle === "monthly" ? "bg-slate-900 text-white" : "text-muted-foreground"
+              )}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingCycle("annual")}
+              className={cn(
+                "text-sm font-semibold px-3 py-1 rounded-full transition-colors",
+                billingCycle === "annual" ? "bg-slate-900 text-white" : "text-muted-foreground"
+              )}
+            >
+              Annual · save ~17%
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-4">
             {SUBSCRIPTION_PLANS.map((p) => (
@@ -467,14 +570,16 @@ export default function BillingPage() {
                 key={p.tier}
                 plan={p}
                 isCurrent={p.tier === currentPlanTier}
+                annual={billingCycle === "annual"}
+                disabled={checkingOut}
                 onSelect={handleSelectPlan}
               />
             ))}
           </div>
 
           <p className="text-center text-xs text-muted-foreground pb-2">
-            All plans include a 14-day free trial · Cancel anytime · Prices
-            exclude taxes
+            Billed {billingCycle} · Cancel anytime from the billing portal ·
+            Prices exclude taxes
           </p>
         </DialogContent>
       </Dialog>

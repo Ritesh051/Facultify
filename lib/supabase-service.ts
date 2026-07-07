@@ -33,10 +33,11 @@ import type {
 
 // ─── Plan limits ──────────────────────────────────────────────────────────────
 
-const PLAN_LIMITS = {
-  starter:    { maxTeachers: 5,   maxStudents: 100,  aiCredits: 20  },
-  growth:     { maxTeachers: 25,  maxStudents: 500,  aiCredits: 100 },
-  enterprise: { maxTeachers: 999, maxStudents: 9999, aiCredits: 999 },
+export const PLAN_LIMITS = {
+  free:       { maxTeachers: 1,   maxStudents: 20,   aiCredits: 10     },
+  starter:    { maxTeachers: 5,   maxStudents: 200,  aiCredits: 50     },
+  institution:{ maxTeachers: 25,  maxStudents: 1000, aiCredits: 999999 },
+  campus:     { maxTeachers: 999999, maxStudents: 3000, aiCredits: 999999 },
 }
 
 // ─── Row → Domain type mappers ────────────────────────────────────────────────
@@ -53,6 +54,8 @@ function toInstitution(row: Record<string, unknown>): Institution {
     maxStudents:      row.max_students as number,
     createdAt:        row.created_at as string,
     isActive:         row.is_active as boolean,
+    billingStatus:    (row.billing_status as Institution['billingStatus']) ?? 'free',
+    currentPeriodEnd: (row.current_period_end as string) ?? undefined,
   }
 }
 
@@ -235,7 +238,8 @@ export async function onboardInstitution(data: OnboardFormData): Promise<Institu
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const plan = PLAN_LIMITS[data.subscriptionTier]
+  // Every new institute starts on the free plan — no plan is ever chosen at signup.
+  const plan = PLAN_LIMITS.free
   // Generate the UUID upfront so we can create the profile before selecting the institution.
   // This avoids an RLS chicken-and-egg problem: the institutions SELECT policy checks
   // auth_institution_id() which queries profiles — if the profile doesn't exist yet,
@@ -249,7 +253,7 @@ export async function onboardInstitution(data: OnboardFormData): Promise<Institu
       name:                 data.institutionName,
       domain:               data.domain,
       admin_email:          data.adminEmail,
-      subscription_tier:    data.subscriptionTier,
+      subscription_tier:    'free',
       max_teachers:         plan.maxTeachers,
       max_students:         plan.maxStudents,
       ai_generations_limit: plan.aiCredits,
@@ -337,7 +341,10 @@ export async function inviteTeacher(
     })
     .select()
     .single()
-  if (error) throw error
+  if (error) {
+    if (error.message.includes('LIMIT_TEACHERS_EXCEEDED')) throw new Error('LIMIT_TEACHERS_EXCEEDED')
+    throw error
+  }
   return toTeacher({ ...teacher as Record<string, unknown>, student_count: 0, test_count: 0 })
 }
 
@@ -408,7 +415,10 @@ export async function addStudent(
     })
     .select()
     .single()
-  if (error) throw error
+  if (error) {
+    if (error.message.includes('LIMIT_STUDENTS_EXCEEDED')) throw new Error('LIMIT_STUDENTS_EXCEEDED')
+    throw error
+  }
   return toStudent({ ...student as Record<string, unknown>, overall_score: 0, tests_attempted: 0 })
 }
 

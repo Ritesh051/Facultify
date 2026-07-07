@@ -334,6 +334,14 @@ export default function TeacherStudentsPage() {
 
       setStudentOpen(false);
       setStudentForm({ name: "", email: "", rollNumber: "", batchId: "" });
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === "LIMIT_STUDENTS_EXCEEDED") {
+        toast.error(
+          "Your institution has reached its student limit for this plan. Ask your admin to upgrade."
+        );
+      } else {
+        toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }

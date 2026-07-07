@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SUBSCRIPTION_PLANS } from "@/lib/mock-data";
+import { formatCurrency } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -93,7 +94,7 @@ function PricingCard({ plan, annual, popular }: PricingCardProps) {
               className="text-5xl font-black tabular-nums leading-none tracking-[-0.04em] transition-all duration-300"
               style={{ color: "#0F172A" }}
             >
-              ${displayedPrice}
+              {formatCurrency(displayedPrice)}
             </span>
             <span className="text-sm text-slate-500 font-medium mb-1.5 leading-none">
               / mo
@@ -105,7 +106,7 @@ function PricingCard({ plan, annual, popular }: PricingCardProps) {
             {annual ? (
               <>
                 <span className="text-xs text-slate-400 line-through tabular-nums">
-                  ${plan.priceMonthly}/mo
+                  {formatCurrency(plan.priceMonthly)}/mo
                 </span>
                 <span
                   className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
@@ -114,7 +115,7 @@ function PricingCard({ plan, annual, popular }: PricingCardProps) {
                     color: "#059669",
                   }}
                 >
-                  Save ${savings}/yr
+                  Save {formatCurrency(savings)}/yr
                 </span>
               </>
             ) : (
@@ -186,8 +187,8 @@ function PricingCard({ plan, annual, popular }: PricingCardProps) {
 
           {/* Fine print */}
           <p className="text-center text-[11px] text-slate-400 mt-3 leading-tight">
-            {plan.tier === "enterprise"
-              ? "Custom invoicing available"
+            {plan.tier === "campus"
+              ? "Custom pricing above 3,000 students — talk to us"
               : "No credit card required"}
           </p>
         </CardContent>
@@ -323,7 +324,7 @@ export default function Pricing() {
               key={plan.tier}
               plan={plan}
               annual={annual}
-              popular={plan.tier === "growth"}
+              popular={plan.tier === "institution"}
             />
           ))}
         </div>

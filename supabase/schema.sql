@@ -7,7 +7,7 @@
 create extension if not exists "pgcrypto";
 
 -- ─── Enums ───────────────────────────────────────────────────────────────────
-create type subscription_tier as enum ('starter', 'growth', 'enterprise');
+create type subscription_tier as enum ('free', 'starter', 'institution', 'campus');
 create type user_role       as enum ('admin', 'teacher', 'student');
 create type question_type   as enum ('mcq', 'text', 'true_false');
 create type difficulty_level as enum ('easy', 'medium', 'hard');
@@ -22,15 +22,22 @@ create table institutions (
   domain                text not null unique,
   admin_email           text not null unique,
   logo_url              text,
-  subscription_tier     subscription_tier not null default 'starter',
-  max_teachers          integer not null default 5,
-  max_students          integer not null default 100,
+  subscription_tier     subscription_tier not null default 'free',
+  max_teachers          integer not null default 1,
+  max_students          integer not null default 20,
   ai_generations_used   integer not null default 0,
-  ai_generations_limit  integer not null default 20,
+  ai_generations_limit  integer not null default 10,
   is_active             boolean not null default true,
+  billing_status        text not null default 'free',
+  dodo_customer_id      text,
+  dodo_subscription_id  text,
+  current_period_end    timestamptz,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()
 );
+
+create unique index institutions_dodo_customer_id_idx
+  on institutions (dodo_customer_id) where dodo_customer_id is not null;
 
 -- ─── Profiles (auth.users → role mapping) ────────────────────────────────────
 -- Created after institution, teacher, or student row exists.
@@ -248,6 +255,49 @@ $$;
 create trigger on_student_batch_change
   after insert or update of batch_id or delete on students
   for each row execute function sync_batch_student_count();
+
+-- ─── Trigger: enforce plan limits on teacher / student invites ───────────────
+-- Authoritative check — cannot be bypassed by calling the REST API directly
+-- (unlike a client-side count, which RLS can also prevent a caller from
+-- computing accurately in the first place, e.g. teachers can't see other
+-- teachers' students).
+create or replace function enforce_teacher_limit()
+returns trigger language plpgsql security definer as $$
+declare
+  v_max   integer;
+  v_count integer;
+begin
+  select max_teachers into v_max from institutions where id = NEW.institution_id;
+  select count(*) into v_count from teachers where institution_id = NEW.institution_id;
+  if v_count >= v_max then
+    raise exception 'LIMIT_TEACHERS_EXCEEDED';
+  end if;
+  return NEW;
+end;
+$$;
+
+create trigger before_teacher_insert
+  before insert on teachers
+  for each row execute function enforce_teacher_limit();
+
+create or replace function enforce_student_limit()
+returns trigger language plpgsql security definer as $$
+declare
+  v_max   integer;
+  v_count integer;
+begin
+  select max_students into v_max from institutions where id = NEW.institution_id;
+  select count(*) into v_count from students where institution_id = NEW.institution_id;
+  if v_count >= v_max then
+    raise exception 'LIMIT_STUDENTS_EXCEEDED';
+  end if;
+  return NEW;
+end;
+$$;
+
+create trigger before_student_insert
+  before insert on students
+  for each row execute function enforce_student_limit();
 
 -- ─── RLS Helper functions ─────────────────────────────────────────────────────
 -- These are security definer so they always run as the function owner,

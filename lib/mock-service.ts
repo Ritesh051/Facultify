@@ -16,6 +16,7 @@ import {
   TEACHER_ANALYTICS,
   STUDENT_ANALYTICS,
   AI_TEST_TEMPLATE,
+  FREE_PLAN_LIMITS,
 } from "./mock-data";
 
 import type {
@@ -62,22 +63,19 @@ export async function getInstitution(id: string): Promise<Institution | undefine
 
 export async function onboardInstitution(data: OnboardFormData): Promise<Institution> {
   await delay(1200);
-  const plan = data.subscriptionTier === "starter"
-    ? { maxTeachers: 5, maxStudents: 100 }
-    : data.subscriptionTier === "growth"
-    ? { maxTeachers: 25, maxStudents: 500 }
-    : { maxTeachers: 999, maxStudents: 9999 };
 
+  // Every new institute starts on the free plan — no plan is ever chosen at signup.
   const institution: Institution = {
     id: `inst_${uid()}`,
     name: data.institutionName,
     domain: data.domain,
     adminEmail: data.adminEmail,
-    subscriptionTier: data.subscriptionTier,
-    maxTeachers: plan.maxTeachers,
-    maxStudents: plan.maxStudents,
+    subscriptionTier: "free",
+    maxTeachers: FREE_PLAN_LIMITS.maxTeachers,
+    maxStudents: FREE_PLAN_LIMITS.maxStudents,
     createdAt: now(),
     isActive: true,
+    billingStatus: "free",
   };
   _institutions.push(institution);
   return institution;
@@ -95,6 +93,11 @@ export async function inviteTeacher(
   data: { name: string; email: string; subject: string }
 ): Promise<Teacher> {
   await delay(800);
+  const institution = _institutions.find((i) => i.id === institutionId);
+  const currentCount = _teachers.filter((t) => t.institutionId === institutionId).length;
+  if (institution && currentCount >= institution.maxTeachers) {
+    throw new Error("LIMIT_TEACHERS_EXCEEDED");
+  }
   const teacher: Teacher = {
     id: `teacher_${uid()}`,
     institutionId,
@@ -139,6 +142,11 @@ export async function addStudent(
   data: Omit<Student, "id" | "enrolledAt" | "overallScore" | "testsAttempted">
 ): Promise<Student> {
   await delay(700);
+  const institution = _institutions.find((i) => i.id === data.institutionId);
+  const currentCount = _students.filter((s) => s.institutionId === data.institutionId).length;
+  if (institution && currentCount >= institution.maxStudents) {
+    throw new Error("LIMIT_STUDENTS_EXCEEDED");
+  }
   const student: Student = {
     ...data,
     id: `student_${uid()}`,
