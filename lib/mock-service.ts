@@ -355,10 +355,13 @@ export async function submitTest(
     return a; // text questions need teacher grading
   });
 
+  const hasTextQuestions = test?.questions.some((q) => q.type === "text") ?? false;
+
   _submissions[idx] = {
     ..._submissions[idx],
-    status: "submitted",
+    status: hasTextQuestions ? "submitted" : "graded",
     submittedAt: now(),
+    ...(hasTextQuestions ? {} : { gradedAt: now() }),
     answers: gradedAnswers,
     totalScore: autoScore,
     percentage: Math.round((autoScore / _submissions[idx].maxScore) * 100),
@@ -391,12 +394,21 @@ export async function gradeTextAnswer(
   const total = sub.answers.reduce((acc, a) => acc + (a.marksAwarded ?? 0), 0);
   const pct = Math.round((total / sub.maxScore) * 100);
 
+  const test = _tests.find((t) => t.id === sub.testId);
+  const textQuestionIds = (test?.questions ?? [])
+    .filter((q) => q.type === "text")
+    .map((q) => q.id);
+  const allTextGraded = textQuestionIds.every((qid) => {
+    const ans = sub.answers.find((a) => a.questionId === qid);
+    return ans && ans.marksAwarded !== undefined && ans.marksAwarded !== null;
+  });
+
   _submissions[idx] = {
     ...sub,
     totalScore: total,
     percentage: pct,
-    status: "graded",
-    gradedAt: now(),
+    status: allTextGraded ? "graded" : "submitted",
+    ...(allTextGraded ? { gradedAt: now() } : {}),
   };
   return _submissions[idx];
 }

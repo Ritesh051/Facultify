@@ -798,11 +798,13 @@ export async function submitTest(
     .upsert(answerRows, { onConflict: 'submission_id,question_id' })
 
   const maxScore = (sub as { max_score: number }).max_score
+  const hasTextQuestions = questions.some((q) => q.type === 'text')
   const { data, error } = await supabase
     .from('submissions')
     .update({
-      status:             'submitted',
+      status:             hasTextQuestions ? 'submitted' : 'graded',
       submitted_at:       new Date().toISOString(),
+      ...(hasTextQuestions ? {} : { graded_at: new Date().toISOString() }),
       total_score:        autoScore,
       percentage:         Math.round((autoScore / maxScore) * 100),
       time_taken_minutes: timeTakenMinutes,
@@ -836,12 +838,12 @@ export async function gradeTextAnswer(
   // Recalculate total score from all answers
   const { data: answers } = await supabase
     .from('submission_answers')
-    .select('marks_awarded')
+    .select('question_id, marks_awarded')
     .eq('submission_id', submissionId)
 
   const { data: sub } = await supabase
     .from('submissions')
-    .select('max_score')
+    .select('max_score, test_id')
     .eq('id', submissionId)
     .single()
 
@@ -851,13 +853,24 @@ export async function gradeTextAnswer(
   const maxScore = (sub?.max_score as number) ?? 1
   const pct = Math.round((total / maxScore) * 100)
 
+  const { data: textQuestions } = await supabase
+    .from('questions')
+    .select('id')
+    .eq('test_id', sub?.test_id)
+    .eq('type', 'text')
+
+  const allTextGraded = (textQuestions ?? []).every((q) => {
+    const ans = (answers ?? []).find((a) => a.question_id === q.id)
+    return ans && ans.marks_awarded !== null
+  })
+
   const { data, error } = await supabase
     .from('submissions')
     .update({
       total_score: total,
       percentage:  pct,
-      status:      'graded',
-      graded_at:   new Date().toISOString(),
+      status:      allTextGraded ? 'graded' : 'submitted',
+      ...(allTextGraded ? { graded_at: new Date().toISOString() } : {}),
     })
     .eq('id', submissionId)
     .select('*, submission_answers(*)')

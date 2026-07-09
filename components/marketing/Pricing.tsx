@@ -310,8 +310,8 @@ export default function Pricing() {
                 transition: "background 0.2s, color 0.2s",
               }}
               aria-live="polite"
-              aria-label={annual ? "2 months free with annual billing" : ""}
-            >
+              aria-label={annual ? "2 months free with annual billing" : " No discount with monthly billing"}
+            > 
               2 months free
             </span>
           </div>
