@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/app-store";
 import DashboardNav from "@/components/dashboards/DashboardNav";
 import DashboardSidebar from "@/components/dashboards/DashboardSidebar";
-import { LayoutDashboard, Users, FileText, PlusCircle, Sparkles, CheckSquare } from "lucide-react";
+import { LayoutDashboard, Users, FileText, PlusCircle, Sparkles, CheckSquare, Settings } from "lucide-react";
 
 const NAV_ITEMS = [
   { label: "Dashboard",     href: "/teacher",              icon: LayoutDashboard },
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { label: "Create Test",   href: "/teacher/create-test",  icon: PlusCircle },
   { label: "AI Generator",  href: "/teacher/ai-generator", icon: Sparkles },
   { label: "Grading Center",href: "/teacher/checking",     icon: CheckSquare },
+  { label: "Settings",      href: "/teacher/settings",     icon: Settings },
 ];
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
